@@ -142,6 +142,7 @@ As classes são reconhecidas **pelo nome** (helmet, hardhat, hard_hat, vest, jac
 
 ## Dicas para melhorar a precisão
 
+- **Boné ou chapéu sendo aceito como capacete:** veja o número que aparece na caixa do boné e na de um capacete de verdade, e use um `--conf-capacete` entre os dois (ex.: `--conf-capacete 0.7`). O mesmo vale para `--conf-colete` com camisas coloridas. Se os números forem parecidos, só re-treinando com fotos de boné resolve (veja abaixo).
 - Teste com as câmeras e a iluminação reais do seu local. Se errar muito, grave alguns minutos, rotule cerca de 200 a 500 imagens (Roboflow ou CVAT, formato YOLO) e treine com `--dados`.
 - Pessoas muito pequenas na imagem: use `--imgsz 960` no treino e na detecção, ou um modelo maior (`yolo26s.pt`/`yolo26m.pt`).
 - Para rodar mais rápido na CPU, exporte para ONNX/OpenVINO:

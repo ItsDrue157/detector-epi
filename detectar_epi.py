@@ -287,11 +287,13 @@ def preparar_onnx(caminho_modelo, imgsz):
 
 
 class DetectorEPI:
-    def __init__(self, caminho_modelo, conf, iou, imgsz, dispositivo, modelo_pessoa=None):
+    def __init__(self, caminho_modelo, conf, iou, imgsz, dispositivo, modelo_pessoa=None, conf_categoria=None):
         from ultralytics import YOLO  # import aqui para o --help funcionar sem ultralytics
 
         self.modelo = YOLO(caminho_modelo)
         self.conf, self.iou, self.imgsz = conf, iou, imgsz
+        # confiança mínima própria por categoria (ex.: capacete mais rígido para não aceitar boné)
+        self.conf_categoria = {k: v for k, v in (conf_categoria or {}).items() if v is not None}
         self.dispositivo = dispositivo
         self.nomes = self.modelo.names
         self.mapa = {i: categoria_da_classe(n) for i, n in self.nomes.items()}
@@ -328,6 +330,8 @@ class DetectorEPI:
         classes = r.boxes.cls.cpu().numpy().astype(int) if r.boxes is not None else []
         for c, cf, cl in zip(caixas, confs, classes):
             cat = self.mapa.get(cl)
+            if cf < self.conf_categoria.get(cat, 0.0):
+                continue
             d = Deteccao(caixa=c, conf=float(cf), categoria=cat or "outra", nome=str(self.nomes[cl]))
             (uteis if cat else outras).append(d)
 
@@ -470,6 +474,10 @@ def main():
                     help="modelo auxiliar (ex.: COCO) para detectar pessoas, usado só se o modelo"
                          " de EPI não tiver classe 'pessoa'. 'nenhum' desativa")
     ap.add_argument("--conf", type=float, default=0.40, help="confiança mínima (0-1)")
+    ap.add_argument("--conf-capacete", type=float, default=None,
+                    help="confiança mínima só para capacete (ex.: 0.7 se boné/chapéu vira capacete)")
+    ap.add_argument("--conf-colete", type=float, default=None,
+                    help="confiança mínima só para colete (ex.: 0.6 se camisa colorida vira colete)")
     ap.add_argument("--iou", type=float, default=0.50, help="IoU do NMS")
     ap.add_argument("--imgsz", type=int, default=640, help="tamanho de entrada do modelo")
     ap.add_argument("--dispositivo", default=None, help="'cpu', '0' (GPU NVIDIA 0 ou AMD com ROCm), 'amd' (GPU AMD via"
@@ -500,7 +508,8 @@ def main():
         args.modelo = preparar_onnx(args.modelo, args.imgsz)
         modelo_pessoa = preparar_onnx(modelo_pessoa, args.imgsz)
         dispositivo = "cpu"
-    detector = DetectorEPI(args.modelo, args.conf, args.iou, args.imgsz, dispositivo, modelo_pessoa)
+    detector = DetectorEPI(args.modelo, args.conf, args.iou, args.imgsz, dispositivo, modelo_pessoa,
+                           {"capacete": args.conf_capacete, "colete": args.conf_colete})
     exigir = set(args.exigir)
 
     if Path(args.fonte).suffix.lower() in EXT_IMAGEM:
