@@ -1,0 +1,18 @@
+venv/
+__pycache__/
+*.pyc
+*.bak
+
+# fotos e registros de alertas
+ocorrencias/*
+!ocorrencias/.gitkeep
+
+# dataset (baixe em https://universe.roboflow.com/anderson-vlsev/epi-d4clr)
+teste/
+
+# saídas de treino
+treinos/
+runs/
+
+# modelo antigo de terceiros (baixe com baixar_modelo.py)
+modelos/epi_original.pt
