@@ -16,3 +16,6 @@ modelos/epi_original.pt
 
 # modelos ONNX gerados pelo --dispositivo amd
 modelos/*.onnx
+
+# cache de rótulos gerado pelo YOLO
+*.cache

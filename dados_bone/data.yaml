@@ -1,9 +1,10 @@
 # gerado pelo coletar_bones.py: dataset original + fotos de boné
+# caminhos relativos a esta pasta
 train:
-  - C:/Users/edlly/Desktop/EPI/teste/train/images
-  - C:/Users/edlly/Desktop/EPI/dados_bone/images/train
+  - ../teste/train/images
+  - images/train
 val:
-  - C:/Users/edlly/Desktop/EPI/teste/valid/images
-  - C:/Users/edlly/Desktop/EPI/dados_bone/images/val
+  - ../teste/valid/images
+  - images/val
 nc: 5
 names: ['Balaclava', 'C_eletrica', 'Capacete', 'Operacional', 'colete']

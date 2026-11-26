@@ -19,6 +19,7 @@ Depois:
 """
 
 import argparse
+import os
 import sys
 import time
 from datetime import datetime
@@ -33,14 +34,23 @@ from detectar_epi import (AMARELO, VERDE, VERMELHO, abrir_captura, categoria_da_
 def escrever_yaml(pasta, dataset_base, nomes):
     base = Path(dataset_base).resolve()
     pasta = pasta.resolve()
+
+    def rel(p):
+        # caminho relativo à pasta do data.yaml: funciona em qualquer PC que tenha o projeto
+        try:
+            return Path(os.path.relpath(p, pasta)).as_posix()
+        except ValueError:  # outro drive no Windows: não dá para fazer relativo
+            return p.as_posix()
+
     linhas = [
         "# gerado pelo coletar_bones.py: dataset original + fotos de boné",
+        "# caminhos relativos a esta pasta",
         "train:",
-        f"  - {(base / 'train' / 'images').as_posix()}",
-        f"  - {(pasta / 'images' / 'train').as_posix()}",
+        f"  - {rel(base / 'train' / 'images')}",
+        "  - images/train",
         "val:",
-        f"  - {(base / 'valid' / 'images').as_posix()}",
-        f"  - {(pasta / 'images' / 'val').as_posix()}",
+        f"  - {rel(base / 'valid' / 'images')}",
+        "  - images/val",
         f"nc: {len(nomes)}",
         f"names: {[nomes[i] for i in sorted(nomes)]}",
     ]
