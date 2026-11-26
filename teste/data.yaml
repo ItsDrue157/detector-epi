@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 5
+names: ['Balaclava', 'C_eletrica', 'Capacete', 'Operacional', 'colete']
+
+roboflow:
+  workspace: anderson-vlsev
+  project: epi-d4clr
+  version: 12
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/anderson-vlsev/epi-d4clr/dataset/12
