@@ -326,10 +326,18 @@ class DetectorEPI:
         self.nomes = self.modelo.names
         self.mapa = {i: categoria_da_classe(n) for i, n in self.nomes.items()}
         self.tem_pessoa = "pessoa" in self.mapa.values()
+        # Só as classes reconhecidas (capacete, colete, pessoa e "sem EPI") entram na inferência.
+        # As demais (ex.: Balaclava, C_eletrica, Operacional) nem são detectadas nem desenhadas.
+        usadas = [i for i, c in self.mapa.items() if c]
+        self.classes_usadas = usadas if len(usadas) < len(self.mapa) else None
 
-        print("\nClasses do modelo:")
+        print("\nClasses usadas:")
         for i, n in self.nomes.items():
-            print(f"  {i:>2}: {n:<18} -> {self.mapa[i] or '(ignorada)'}")
+            if self.mapa[i]:
+                print(f"  {i:>2}: {n:<18} -> {self.mapa[i]}")
+        ignoradas = [str(n) for i, n in self.nomes.items() if not self.mapa[i]]
+        if ignoradas:
+            print(f"  (desativadas: {', '.join(ignoradas)})")
 
         # Se o modelo de EPI não detecta pessoas, usa um segundo modelo (ex.: COCO) só para isso.
         self.modelo_pessoa, self.classes_pessoa = None, []
@@ -351,7 +359,8 @@ class DetectorEPI:
 
     def detectar(self, frame) -> tuple[list[Deteccao], list[Deteccao]]:
         r = self.modelo.predict(frame, conf=self.conf, iou=self.iou, imgsz=self.imgsz,
-                                device=self.dispositivo, verbose=False)[0]
+                                device=self.dispositivo, classes=self.classes_usadas,
+                                verbose=False)[0]
         uteis, outras = [], []
         caixas = r.boxes.xyxy.cpu().numpy() if r.boxes is not None else []
         confs = r.boxes.conf.cpu().numpy() if r.boxes is not None else []
