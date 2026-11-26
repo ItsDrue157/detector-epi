@@ -16,3 +16,6 @@ runs/
 
 # modelo antigo de terceiros (baixe com baixar_modelo.py)
 modelos/epi_original.pt
+
+# modelos ONNX gerados pelo --dispositivo amd
+modelos/*.onnx

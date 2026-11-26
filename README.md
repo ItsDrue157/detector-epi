@@ -46,6 +46,31 @@ Pegue o comando em https://pytorch.org/get-started/locally/. Exemplo:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
+### Sem placa NVIDIA: GPU AMD ou só CPU
+
+**Só CPU (qualquer PC):** o `pip install -r requirements.txt` já instala o PyTorch para CPU. Rode com:
+
+```bash
+python detectar_epi.py --dispositivo cpu
+```
+
+Funciona igual, só que com menos FPS. Para ganhar velocidade na CPU, use `--imgsz 480` ou veja a dica de OpenVINO no final.
+
+**GPU AMD no Windows 11 (24H2 ou mais novo):** use o Windows ML, que roda o modelo em ONNX na placa AMD (também serve para Intel Arc). Num venv **limpo**:
+
+```bash
+pip install -r requirements-amd.txt
+python detectar_epi.py --dispositivo amd
+```
+
+- Na primeira execução os modelos `.pt` são convertidos para `modelos/epi_640.onnx` e `modelos/yolo26s_640.onnx`. Depois disso a conversão não se repete. Se mudar o `--imgsz`, ele gera outro arquivo.
+- No início aparece `Using ONNX Runtime ... with ...`, que mostra onde o modelo está rodando. Se aparecer `CPUExecutionProvider`, ele não achou a GPU: atualize o driver da AMD (Adrenalin) e o Windows, e confira se o pacote `onnxruntime` comum **não** está instalado (`pip uninstall onnxruntime`).
+- Em Windows mais antigo que o 24H2, o Windows ML não funciona e o programa roda na CPU.
+
+**GPU AMD no Linux (ROCm):** instale o PyTorch com ROCm antes do requirements (comando em https://pytorch.org/get-started/locally/, opção ROCm) e rode normalmente com `--dispositivo 0`. Nesse caso o treino (`treinar.py`) também usa a GPU AMD.
+
+> O treino (`treinar.py`) precisa de PyTorch com CUDA ou ROCm para usar a GPU. Numa AMD no Windows ele roda na CPU, e é bem lento. Uma alternativa é treinar no Google Colab e copiar o `epi.pt` para a pasta `modelos/`.
+
 ## 2. Conseguir o modelo
 
 ### Opção A: baixar um modelo pronto (recomendado para começar)
@@ -102,6 +127,8 @@ python detectar_epi.py --fonte "rtsp://user:senha@192.168.0.10:554/stream"
 python detectar_epi.py --exigir capacete             # cobra só capacete
 python detectar_epi.py --conf 0.5                    # menos falsos positivos
 python detectar_epi.py --sem-som
+python detectar_epi.py --dispositivo amd             # GPU AMD (Windows ML)
+python detectar_epi.py --dispositivo cpu             # só processador
 ```
 
 ## Como a verificação funciona

@@ -25,15 +25,16 @@ def escolher_dispositivo(pedido):
     if pedido:
         return pedido
     import torch
-    if torch.cuda.is_available():
-        print(f"GPU encontrada: {torch.cuda.get_device_name(0)}")
+    if torch.cuda.is_available():  # também é True para AMD com PyTorch ROCm
+        tipo = "AMD/ROCm" if getattr(torch.version, "hip", None) else "NVIDIA/CUDA"
+        print(f"GPU encontrada ({tipo}): {torch.cuda.get_device_name(0)}")
         return "0"
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         print("Usando GPU do Mac (MPS)")
         return "mps"
     print("\n[AVISO] Nenhuma GPU encontrada, treinando na CPU. Vai funcionar, mas é lento.\n"
-          "        Para um teste rápido use --epocas 20. Para usar sua GPU NVIDIA, instale o\n"
-          "        PyTorch com CUDA (veja o LEIA-ME).\n")
+          "        Para um teste rápido use --epocas 20. Para usar a GPU, instale o PyTorch\n"
+          "        com CUDA (NVIDIA) ou ROCm (AMD) - veja o README.\n")
     return "cpu"
 
 

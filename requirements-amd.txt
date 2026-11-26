@@ -1,0 +1,9 @@
+# GPU AMD no Windows 11 (24H2 ou mais novo) via Windows ML.
+# Instale num venv limpo:  pip install -r requirements-amd.txt
+# NÃO instale junto o pacote "onnxruntime" comum, senão o Windows ML não é usado.
+ultralytics>=8.4.0
+opencv-python>=4.8
+numpy
+onnx
+onnxslim
+onnxruntime-windowsml

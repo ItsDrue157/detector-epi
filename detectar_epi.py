@@ -9,6 +9,8 @@ Exemplos de uso:
     python detectar_epi.py --fonte rtsp://usuario:senha@ip:554/stream   # câmera IP
     python detectar_epi.py --exigir capacete        # cobra só capacete
     python detectar_epi.py --salvar saida.mp4       # grava o vídeo anotado
+    python detectar_epi.py --dispositivo amd        # GPU AMD (Windows ML / ONNX)
+    python detectar_epi.py --dispositivo cpu        # só processador
 
 Teclas na janela:
     q ou ESC  -> sair
@@ -267,6 +269,23 @@ class RegistroOcorrencias:
 # --------------------------------------------------------------------------- #
 # Detector
 # --------------------------------------------------------------------------- #
+def preparar_onnx(caminho_modelo, imgsz):
+    """Converte um .pt para ONNX (uma vez só) e devolve o caminho do .onnx.
+
+    O ONNX roda na GPU AMD pelo Windows ML (pacote onnxruntime-windowsml), sem precisar de CUDA.
+    """
+    if not caminho_modelo or Path(caminho_modelo).suffix.lower() != ".pt" or not Path(caminho_modelo).exists():
+        return caminho_modelo
+    pt = Path(caminho_modelo)
+    destino = pt.with_name(f"{pt.stem}_{imgsz}.onnx")
+    if not destino.exists():
+        from ultralytics import YOLO
+        print(f"Convertendo {pt} para ONNX (só na primeira vez)...")
+        gerado = Path(YOLO(str(pt)).export(format="onnx", imgsz=imgsz, device="cpu"))
+        gerado.replace(destino)
+    return str(destino)
+
+
 class DetectorEPI:
     def __init__(self, caminho_modelo, conf, iou, imgsz, dispositivo, modelo_pessoa=None):
         from ultralytics import YOLO  # import aqui para o --help funcionar sem ultralytics
@@ -453,7 +472,8 @@ def main():
     ap.add_argument("--conf", type=float, default=0.40, help="confiança mínima (0-1)")
     ap.add_argument("--iou", type=float, default=0.50, help="IoU do NMS")
     ap.add_argument("--imgsz", type=int, default=640, help="tamanho de entrada do modelo")
-    ap.add_argument("--dispositivo", default=None, help="'cpu', '0' (GPU 0), 'mps' (Mac). Padrão: automático")
+    ap.add_argument("--dispositivo", default=None, help="'cpu', '0' (GPU NVIDIA 0 ou AMD com ROCm), 'amd' (GPU AMD via"
+                         " Windows ML/ONNX), 'mps' (Mac). Padrão: automático")
     ap.add_argument("--exigir", nargs="+", default=["capacete", "colete"],
                     choices=["capacete", "colete"], help="quais EPIs são obrigatórios")
     ap.add_argument("--largura", type=int, default=1280, help="largura pedida à webcam")
@@ -474,7 +494,13 @@ def main():
                  "ou aponte para outro modelo com --modelo caminho/do/modelo.pt")
 
     modelo_pessoa = None if args.modelo_pessoa.lower() == "nenhum" else args.modelo_pessoa
-    detector = DetectorEPI(args.modelo, args.conf, args.iou, args.imgsz, args.dispositivo, modelo_pessoa)
+    dispositivo = args.dispositivo
+    if dispositivo and dispositivo.lower() in ("amd", "onnx", "winml"):
+        # O Windows ML escolhe sozinho a GPU (AMD, Intel ou NVIDIA) e cai para a CPU se não houver.
+        args.modelo = preparar_onnx(args.modelo, args.imgsz)
+        modelo_pessoa = preparar_onnx(modelo_pessoa, args.imgsz)
+        dispositivo = "cpu"
+    detector = DetectorEPI(args.modelo, args.conf, args.iou, args.imgsz, dispositivo, modelo_pessoa)
     exigir = set(args.exigir)
 
     if Path(args.fonte).suffix.lower() in EXT_IMAGEM:
