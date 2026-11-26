@@ -45,8 +45,10 @@ pip install -r requirements.txt
 Pegue o comando em https://pytorch.org/get-started/locally/. Exemplo:
 
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
+
+> Placas RTX 50 (5060, 5070...) precisam do CUDA 12.8 ou mais novo (`cu128`). Para conferir se a GPU está sendo usada: `python -c "import torch; print(torch.cuda.is_available())"` tem que mostrar `True`.
 
 ### Sem placa NVIDIA: GPU AMD ou só CPU
 
@@ -67,7 +69,16 @@ python detectar_epi.py --dispositivo amd
 
 - Na primeira execução os modelos `.pt` são convertidos para `modelos/epi_640.onnx` e `modelos/yolo26s_640.onnx`. Depois disso a conversão não se repete. Se mudar o `--imgsz`, ele gera outro arquivo.
 - No início aparece `Using ONNX Runtime ... with ...`, que mostra onde o modelo está rodando. Se aparecer `CPUExecutionProvider`, ele não achou a GPU: atualize o driver da AMD (Adrenalin) e o Windows, e confira se o pacote `onnxruntime` comum **não** está instalado (`pip uninstall onnxruntime`).
-- Em Windows mais antigo que o 24H2, o Windows ML não funciona e o programa roda na CPU.
+- Em Windows mais antigo que o 24H2, o Windows ML não funciona. Use o DirectML (veja abaixo).
+
+**GPU AMD no Windows 10 (ou Windows 11 antes do 24H2):** use o DirectML. Num venv **limpo**, com Python 3.12:
+
+```bash
+pip install -r requirements-amd-win10.txt
+python detectar_epi.py --dispositivo amd
+```
+
+- No início aparece `GPU via DirectML (Windows 10).`. Se aparecer o aviso de que o DirectML não foi encontrado, confira se o pacote `onnxruntime` comum **não** está instalado (`pip uninstall onnxruntime`) e reinstale o `onnxruntime-directml`.
 
 **GPU AMD no Linux (ROCm):** instale o PyTorch com ROCm antes do requirements (comando em https://pytorch.org/get-started/locally/, opção ROCm) e rode normalmente com `--dispositivo 0`. Nesse caso o treino (`treinar.py`) também usa a GPU AMD.
 

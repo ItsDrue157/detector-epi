@@ -286,6 +286,34 @@ def preparar_onnx(caminho_modelo, imgsz):
     return str(destino)
 
 
+def ativar_directml():
+    """No Windows 10 (sem Windows ML) faz o ONNX usar a GPU pelo DirectML (pacote onnxruntime-directml).
+
+    O Ultralytics só pede a CPU nesse caso, então trocamos a lista de providers antes de criar a sessão.
+    """
+    if sys.platform != "win32" or sys.getwindowsversion().build >= 26100:
+        return  # Windows 11 24H2+ usa o Windows ML
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return
+    if "DmlExecutionProvider" not in ort.get_available_providers():
+        print("Aviso: DirectML não encontrado. Instale com:  pip install -r requirements-amd-win10.txt")
+        return
+    sessao_original = ort.InferenceSession
+
+    def sessao_dml(modelo, sess_options=None, providers=None, *a, **kw):
+        if not providers or providers == ["CPUExecutionProvider"]:
+            providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
+            sess_options = sess_options or ort.SessionOptions()
+            sess_options.enable_mem_pattern = False  # exigências do DirectML
+            sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        return sessao_original(modelo, sess_options, providers, *a, **kw)
+
+    ort.InferenceSession = sessao_dml
+    print("GPU via DirectML (Windows 10).")
+
+
 class DetectorEPI:
     def __init__(self, caminho_modelo, conf, iou, imgsz, dispositivo, modelo_pessoa=None, conf_categoria=None):
         from ultralytics import YOLO  # import aqui para o --help funcionar sem ultralytics
@@ -507,6 +535,7 @@ def main():
         # O Windows ML escolhe sozinho a GPU (AMD, Intel ou NVIDIA) e cai para a CPU se não houver.
         args.modelo = preparar_onnx(args.modelo, args.imgsz)
         modelo_pessoa = preparar_onnx(modelo_pessoa, args.imgsz)
+        ativar_directml()
         dispositivo = "cpu"
     detector = DetectorEPI(args.modelo, args.conf, args.iou, args.imgsz, dispositivo, modelo_pessoa,
                            {"capacete": args.conf_capacete, "colete": args.conf_colete})

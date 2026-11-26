@@ -1,0 +1,9 @@
+# GPU AMD no Windows 10 (ou Windows 11 antes do 24H2) via DirectML.
+# Use Python 3.12 e instale num venv limpo:  pip install -r requirements-amd-win10.txt
+# NÃO instale junto o pacote "onnxruntime" comum, senão o DirectML não é usado.
+ultralytics>=8.4.0
+opencv-python>=4.8
+numpy
+onnx
+onnxslim
+onnxruntime-directml

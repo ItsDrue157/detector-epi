@@ -17,8 +17,9 @@ Depois instale conforme o seu computador:
 
 | Seu computador | Comando de instalação |
 |---|---|
-| **Placa NVIDIA** | `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124` e depois `pip install -r requirements.txt` |
+| **Placa NVIDIA** | `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128` e depois `pip install -r requirements.txt` |
 | **Placa AMD** (Windows 11 24H2 ou mais novo) | `pip install -r requirements-amd.txt` (num venv **novo**, sem o requirements.txt) |
+| **Placa AMD** (Windows 10) | `pip install -r requirements-amd-win10.txt` (num venv **novo**, com Python 3.12) |
 | **Sem placa de vídeo** (só CPU) | `pip install -r requirements.txt` |
 
 > Toda vez que abrir um terminal novo, ative o ambiente com `venv\Scripts\activate` antes de rodar os comandos.
