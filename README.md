@@ -17,7 +17,7 @@ detector_epi/
 
 O repositório já vem com o modelo pronto:
 
-- `modelos/epi.pt` é um YOLO26s treinado no dataset brasileiro de EPI [anderson-vlsev/epi-d4clr](https://universe.roboflow.com/anderson-vlsev/epi-d4clr) (Roboflow, CC BY 4.0). Classes: `Balaclava`, `C_eletrica`, `Capacete`, `Operacional` e `colete`.
+- `modelos/epi.pt` é um YOLO26s treinado no dataset brasileiro de EPI [anderson-vlsev/epi-d4clr](https://universe.roboflow.com/anderson-vlsev/epi-d4clr) (Roboflow, CC BY 4.0).
 - `modelos/yolo26s.pt` são os pesos COCO da Ultralytics. O modelo de EPI não tem classe de pessoa, então o script usa este modelo só para achar as pessoas (`--modelo-pessoa`).
 
 ```bash
@@ -26,6 +26,16 @@ python detectar_epi.py       # abre a webcam
 ```
 
 > **Atenção:** o `baixar_modelo.py` e o `treinar.py` **substituem** o `modelos/epi.pt`.
+
+### Classes usadas
+
+| Classe do modelo | Uso no detector | Onde é procurada |
+|---|---|---|
+| `Capacete` | capacete | região da cabeça |
+| `colete` | colete | região do tronco |
+| `person` (de `yolo26s.pt`) | pessoa | caixa de cada trabalhador |
+
+O dataset também tem as classes `Balaclava`, `C_eletrica` e `Operacional`, mas elas não são usadas: o detector filtra essas classes e não as mostra na tela.
 
 ## 1. Instalação
 
@@ -151,7 +161,7 @@ python detectar_epi.py --dispositivo cpu             # só processador
 3. A pessoa fica **verde** se tiver tudo o que é exigido e **vermelha** se faltar algo, ou se o modelo detectar diretamente "sem capacete"/"sem colete" nela.
 4. O alerta (bipe, foto e CSV) só dispara quando a infração aparece em vários frames seguidos (`--frames-confirmacao`, padrão 8). Assim um frame ruim não gera alarme falso. Entre um alerta e outro há um intervalo de `--intervalo-alerta` segundos.
 
-As classes são reconhecidas **pelo nome** (helmet, hardhat, hard_hat, vest, jacket, person, worker, no_helmet, NO-Hardhat, NO-Safety Vest, helmet_off…). Por isso você pode usar outro modelo de EPI pronto com `--modelo outro_modelo.pt`, sem mexer no código. Ao abrir, o programa mostra como mapeou cada classe.
+As classes são reconhecidas **pelo nome** (helmet, hardhat, hard_hat, vest, jacket, person, worker, no_helmet, NO-Hardhat, NO-Safety Vest, helmet_off…). Por isso você pode usar outro modelo de EPI pronto com `--modelo outro_modelo.pt`, sem mexer no código. Ao abrir, o programa mostra as classes que vai usar. As que não forem reconhecidas são filtradas e não aparecem na tela.
 
 ## Ensinar o modelo que boné não é capacete
 

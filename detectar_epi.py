@@ -335,9 +335,6 @@ class DetectorEPI:
         for i, n in self.nomes.items():
             if self.mapa[i]:
                 print(f"  {i:>2}: {n:<18} -> {self.mapa[i]}")
-        ignoradas = [str(n) for i, n in self.nomes.items() if not self.mapa[i]]
-        if ignoradas:
-            print(f"  (desativadas: {', '.join(ignoradas)})")
 
         # Se o modelo de EPI não detecta pessoas, usa um segundo modelo (ex.: COCO) só para isso.
         self.modelo_pessoa, self.classes_pessoa = None, []
