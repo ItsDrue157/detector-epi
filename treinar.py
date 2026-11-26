@@ -18,6 +18,7 @@ No fim, o melhor modelo é copiado para  modelos/epi.pt  (usado pelo detectar_ep
 import argparse
 import shutil
 import sys
+import time
 from pathlib import Path
 
 
@@ -90,6 +91,10 @@ def main():
 
     destino = Path("modelos") / "epi.pt"
     destino.parent.mkdir(exist_ok=True)
+    if destino.exists():  # guarda o modelo anterior para poder voltar
+        anterior = destino.with_name(f"epi_anterior_{time.strftime('%Y%m%d_%H%M%S')}.pt")
+        shutil.copy(destino, anterior)
+        print(f"Modelo anterior guardado em: {anterior}")
     shutil.copy(melhor, destino)
     print(f"\nModelo salvo em: {destino.resolve()}")
 

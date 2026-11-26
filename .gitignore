@@ -19,3 +19,8 @@ modelos/epi_original.pt
 
 # modelos ONNX gerados pelo --dispositivo amd
 modelos/*.onnx
+
+# fotos coletadas pelo coletar_bones.py e backups de modelo
+dados_bone/
+modelos/epi_backup.pt
+modelos/epi_anterior_*.pt

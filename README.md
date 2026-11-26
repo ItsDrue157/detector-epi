@@ -1,5 +1,7 @@
 # Detector de EPI com YOLO (capacete e colete)
 
+> **Guia rápido de uso:** veja o [COMO_USAR.md](COMO_USAR.md).
+
 Detecta em tempo real, pela webcam (ou vídeo, imagem, câmera IP), se cada pessoa está usando **capacete** e **colete**. Quem estiver sem EPI fica com a caixa vermelha. O programa também toca um bipe e salva uma foto mais uma linha em `ocorrencias/registro.csv`.
 
 ```
@@ -139,6 +141,21 @@ python detectar_epi.py --dispositivo cpu             # só processador
 4. O alerta (bipe, foto e CSV) só dispara quando a infração aparece em vários frames seguidos (`--frames-confirmacao`, padrão 8). Assim um frame ruim não gera alarme falso. Entre um alerta e outro há um intervalo de `--intervalo-alerta` segundos.
 
 As classes são reconhecidas **pelo nome** (helmet, hardhat, hard_hat, vest, jacket, person, worker, no_helmet, NO-Hardhat, NO-Safety Vest, helmet_off…). Por isso você pode usar outro modelo de EPI pronto com `--modelo outro_modelo.pt`, sem mexer no código. Ao abrir, o programa mostra como mapeou cada classe.
+
+## Ensinar o modelo que boné não é capacete
+
+1. Grave pessoas de **boné** (sem capacete de verdade!) com a câmera do local:
+   ```bash
+   python coletar_bones.py                  # webcam: espaço salva, "a" salva sozinho a cada 1 s
+   python coletar_bones.py --fonte bones.mp4   # ou um vídeo já gravado
+   ```
+   Cada foto já sai rotulada: o colete e os outros EPIs que o modelo achou viram rótulo, e o "capacete" (que é o boné) é descartado. Junte de 150 a 300 fotos, com bonés de cores e ângulos diferentes.
+2. Treine juntando o dataset original com as fotos novas, partindo do modelo atual:
+   ```bash
+   python treinar.py --dados dados_bone/data.yaml --modelo-base modelos/epi_backup.pt --epocas 50
+   ```
+   O `treinar.py` guarda o modelo anterior como `modelos/epi_anterior_<data>.pt` antes de substituir o `epi.pt`.
+3. Teste com `python detectar_epi.py`. Se ficar pior, copie o modelo anterior de volta para `modelos/epi.pt`.
 
 ## Dicas para melhorar a precisão
 
