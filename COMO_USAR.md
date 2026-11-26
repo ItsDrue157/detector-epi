@@ -44,6 +44,15 @@ Na placa AMD, a primeira execução demora um pouco mais porque converte os mode
 | `p` | pausar / continuar |
 | `s` | salvar um print em `ocorrencias/` |
 
+**O que o detector verifica:**
+
+| EPI | Onde procura |
+|---|---|
+| Capacete | na cabeça da pessoa |
+| Colete | no tronco da pessoa |
+
+O modelo foi treinado também com as classes `Balaclava`, `C_eletrica` e `Operacional`, mas elas ficam desligadas e não aparecem na tela.
+
 **Cores:** caixa **verde** = pessoa com todo o EPI. Caixa **vermelha** = falta capacete ou colete.
 
 Quando alguém fica sem EPI por alguns segundos, o programa toca um bipe, salva uma foto e anota em `ocorrencias/registro.csv`.
