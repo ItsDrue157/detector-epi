@@ -137,14 +137,14 @@ ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 70ch; }
   <h2>Antes e depois nas imagens</h2>
   <p>Mesmas fotos, mesmo programa (<span class="num">detectar_epi.py</span>), só trocando o modelo. Caixa vermelha: falta EPI. Rótulo verde: EPI encontrado.</p>
   <div class="gallery">
-    <figure><img src="img/bone_1.jpg" alt="Pessoa de boné azul: antes aparecia CAPACETE OK, depois SEM CAPACETE"><figcaption>Boné azul. Antes o modelo via um capacete com 74% de confiança e liberava a pessoa. Depois marca corretamente "SEM CAPACETE".</figcaption></figure>
+    <figure><img src="comparacoes/bone_1.jpg" alt="Pessoa de boné azul: antes aparecia CAPACETE OK, depois SEM CAPACETE"><figcaption>Boné azul. Antes o modelo via um capacete com 74% de confiança e liberava a pessoa. Depois marca corretamente "SEM CAPACETE".</figcaption></figure>
     <div class="two">
-      <figure><img src="img/bone_2.jpg" alt="Segunda foto de boné, antes e depois"><figcaption>Outra foto de boné: o falso capacete some.</figcaption></figure>
-      <figure><img src="img/bone_3.jpg" alt="Terceira foto de boné, antes e depois"><figcaption>Terceira foto de boné, mesmo resultado.</figcaption></figure>
+      <figure><img src="comparacoes/bone_2.jpg" alt="Segunda foto de boné, antes e depois"><figcaption>Outra foto de boné: o falso capacete some.</figcaption></figure>
+      <figure><img src="comparacoes/bone_3.jpg" alt="Terceira foto de boné, antes e depois"><figcaption>Terceira foto de boné, mesmo resultado.</figcaption></figure>
     </div>
     <div class="two">
-      <figure><img src="img/capacete_1.jpg" alt="Trabalhadores em área industrial com capacete branco, detectado antes e depois"><figcaption>Capacete de verdade continua sendo reconhecido (0.85 antes, 0.82 depois).</figcaption></figure>
-      <figure><img src="img/capacete_2.jpg" alt="Outra foto com capacete, detectado antes e depois"><figcaption>A confiança no capacete subiu (0.68 → 0.81). Nas duas versões aparece "SEM CAPACETE" porque a caixa da pessoa começa abaixo do capacete, e ele fica fora da região da cabeça. Isso vem da regra de posição do detector, não do modelo.</figcaption></figure>
+      <figure><img src="comparacoes/capacete_1.jpg" alt="Trabalhadores em área industrial com capacete branco, detectado antes e depois"><figcaption>Capacete de verdade continua sendo reconhecido (0.85 antes, 0.82 depois).</figcaption></figure>
+      <figure><img src="comparacoes/capacete_2.jpg" alt="Outra foto com capacete, detectado antes e depois"><figcaption>A confiança no capacete subiu (0.68 → 0.81). Nas duas versões aparece "SEM CAPACETE" porque a caixa da pessoa começa abaixo do capacete, e ele fica fora da região da cabeça. Isso vem da regra de posição do detector, não do modelo.</figcaption></figure>
     </div>
   </div>
 </section>
