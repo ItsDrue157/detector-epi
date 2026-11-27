@@ -8,9 +8,7 @@ Detecta em tempo real, pela webcam (ou vídeo, foto, câmera IP), se cada pessoa
 detector_epi/
 ├── detectar_epi.py        # detecção em tempo real (webcam/vídeo/foto/câmera IP)
 ├── treinar.py             # treina/re-treina o modelo (na GPU NVIDIA)
-├── coletar_certo.py       # coleta fotos de EPI de verdade (rótulo de certo)
-├── coletar_errado.py      # coleta fotos do que parece EPI mas não é (colete de futebol, boné)
-├── coleta.py              # parte comum dos dois scripts de coleta
+├── coletar_colete.py      # coleta fotos de colete de EPI, já rotuladas
 ├── dados_treino.yaml      # dataset de treino: original + todas as coletas (gerado)
 ├── requirements.txt       # instalação só CPU
 ├── requirements-gpu.txt   # instalação com GPU NVIDIA (RTX série 40 ou 50)
@@ -21,8 +19,7 @@ detector_epi/
 │   └── yolo26s.pt         # detector de pessoa (GPU)
 ├── teste/                 # dataset original (Roboflow)
 ├── dados_bone/            # fotos de boné coletadas
-├── dados_colete_certo/    # fotos de colete de EPI coletadas
-├── dados_colete_errado/   # fotos de colete de futebol coletadas
+├── dados_colete/          # fotos de colete de EPI coletadas
 └── tcc/                   # relatório e gráficos do re-treino
 ```
 
@@ -127,21 +124,16 @@ python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epoca
 | `--workers 0` | se der erro de multiprocessing no Windows |
 | `--retomar` | continua um treino que foi interrompido |
 
-### Coletar fotos para o re-treino
+### Coletar fotos de colete de EPI
 
 ```bash
-python coletar_certo.py                    # colete de EPI de verdade  -> dados_colete_certo/
-python coletar_errado.py                   # colete de futebol (falso) -> dados_colete_errado/
-python coletar_errado.py --item capacete   # boné (falso capacete)     -> dados_bone/
-python coletar_certo.py --fonte obra.mp4   # qualquer um aceita um vídeo gravado
+python coletar_colete.py                    # webcam -> dados_colete/
+python coletar_colete.py --fonte obra.mp4   # ou um vídeo gravado
 ```
 
-Webcam: espaço salva, `a` salva sozinho a cada 1 s. Cada foto já sai rotulada com os EPIs que o modelo achou. A diferença é o item escolhido (`--item`, padrão colete):
+Webcam: espaço salva, `a` salva sozinho a cada 1 s. Cada foto já sai rotulada com os EPIs que o modelo achou. Como ali só aparece colete de verdade, detecções fracas de colete (a partir de 0,15) também valem. Se o modelo não achar, `m` congela a imagem para desenhar as caixas com o mouse (`cv2.selectROIs`).
 
-- **`coletar_certo.py`**: o item é rotulado como EPI. Como ali só aparece EPI de verdade, detecções fracas (a partir de 0,15) também valem. Se o modelo não achar, `m` congela a imagem para desenhar as caixas com o mouse (`cv2.selectROIs`).
-- **`coletar_errado.py`**: o item é descartado dos rótulos, e o modelo aprende que aquilo não é EPI. Não deixe aparecer o EPI de verdade.
-
-A parte comum fica no `coleta.py`. A cada coleta, o `dados_treino.yaml` é refeito juntando o dataset original com **todas** as pastas de coleta, para um re-treino não fazer o modelo esquecer o que outra coleta ensinou. No fim do treino, o `treinar.py` mostra para cada coleta em quantas fotos o modelo ainda erra.
+A cada coleta, o `dados_treino.yaml` é refeito juntando o dataset original, as fotos de boné (`dados_bone/`) e as de colete (`dados_colete/`). No fim do treino, o `treinar.py` mostra quantas fotos de boné ainda viram capacete e quantos coletes ainda não são encontrados.
 
 ## Licença
 

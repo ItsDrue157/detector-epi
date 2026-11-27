@@ -1,5 +1,4 @@
-# gerado pelos scripts de coleta: dataset original + fotos coletadas
-# caminhos relativos a esta pasta
+# dataset de treino: original + fotos coletadas
 train:
   - teste/train/images
   - dados_bone/images/train

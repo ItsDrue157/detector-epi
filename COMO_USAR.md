@@ -94,31 +94,23 @@ Faça o treino **no PC com a RTX**. Na CPU ele leva horas.
 | `epi_backup.pt` | o modelo anterior. A cada treino, o `epi.pt` antigo vira o novo backup |
 | `yolo26n.pt`, `yolo26s.pt` | detectores de pessoa (não apagar) |
 
-**Passo 1: coletar fotos**
+**Passo 1: coletar fotos de colete de EPI**
 
-São dois scripts, um para cada problema:
+```bash
+python coletar_colete.py                    # webcam
+python coletar_colete.py --fonte video.mp4  # ou um vídeo gravado
+```
 
-| Problema | Script | O que filmar | Fotos vão para |
-|---|---|---|---|
-| O modelo **não acha** o colete de EPI | `python coletar_certo.py` | só gente de **colete de EPI** | `dados_colete_certo/` |
-| O modelo acha colete **onde não tem** (colete de futebol) | `python coletar_errado.py` | só gente de **colete de futebol** | `dados_colete_errado/` |
+As fotos vão para `dados_colete/`.
 
-Os dois aceitam `--item capacete` (capacete de EPI / boné, que vai para `dados_bone/`) e `--fonte video.mp4` para usar um vídeo gravado.
-
-Nos dois:
-- Coloque a pessoa na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
+- Coloque alguém **de colete de EPI** na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
 - Aperte `a` para salvar uma foto por segundo automaticamente (ou `espaço` para salvar uma por vez). `q` sai.
-- Junte **de 150 a 300 fotos** em cada um, com cores e pessoas diferentes, se der.
-
-No `coletar_certo.py`:
-- Em **verde grosso** aparece o colete que vai ser rotulado como EPI. Como ali só tem colete de verdade, ele aceita até detecções fracas.
+- Em **verde grosso** aparece o colete que vai ser rotulado. Como ali só tem colete de verdade, ele aceita até detecções fracas.
 - Se aparecer **"colete não encontrado: aperte M"**, aperte `m`: a imagem congela. Arraste uma caixa sobre cada colete, aperte `ENTER` a cada caixa e `ESC` para salvar. Essas fotos são as que mais ensinam o modelo.
 - No automático, ele só salva as fotos em que achou o colete. As outras, marque com `m`.
+- Junte **de 150 a 300 fotos**, com coletes e pessoas diferentes, se der.
 
-No `coletar_errado.py`:
-- **Riscado em vermelho** fica o "colete" que é o de futebol: ele é descartado e ensinado como "não é colete".
-
-> ⚠️ **Não misture:** no `coletar_certo.py` só colete de EPI; no `coletar_errado.py` só colete de futebol. Um colete de EPI que aparecer no "errado" é ensinado como se não fosse EPI.
+> ⚠️ **Só colete de EPI de verdade.** Nada de colete de futebol nessa coleta.
 
 **Passo 2: treinar, partindo do modelo atual**
 
@@ -126,7 +118,7 @@ No `coletar_errado.py`:
 python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
 ```
 
-- O `dados_treino.yaml` é atualizado sozinho pelos scripts de coleta e junta o dataset original com **todas** as fotos coletadas (boné, colete certo e colete errado). Assim o modelo aprende o colete sem esquecer o boné.
+- O `dados_treino.yaml` é atualizado sozinho pelo `coletar_colete.py` e junta o dataset original, as fotos de boné e as de colete. Assim o modelo aprende o colete sem esquecer o boné.
 - Leva uns 20 a 40 minutos na RTX.
 - No final aparece, para cada coleta, em quantas fotos o modelo ainda erra, antes e depois do treino: colete de futebol marcado como colete, e colete de EPI não encontrado.
 - O novo modelo vira o `modelos/epi.pt` e o anterior vira o `modelos/epi_backup.pt`.

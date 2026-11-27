@@ -13,7 +13,7 @@ Exemplos:
     python treinar.py --retomar                        # continua um treino interrompido
     python treinar.py --log-completo                   # mostra também o log original do YOLO
 
-    # re-treino partindo do modelo atual, com as fotos do coletar_certo.py / coletar_errado.py:
+    # re-treino partindo do modelo atual, com as fotos de boné e do coletar_colete.py:
     python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
 
 No fim:
@@ -36,7 +36,6 @@ from pathlib import Path
 if "--log-completo" not in sys.argv:
     os.environ.setdefault("YOLO_VERBOSE", "False")
 
-from coleta import PASTAS  # noqa: E402
 from detectar_epi import EXT_IMAGEM, categoria_da_classe  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -429,21 +428,19 @@ def main():
         except Exception as e:
             print(fraco(f"  (não deu para validar o modelo base: {e})"))
 
-    # fotos do coletar_certo.py / coletar_errado.py: em quantas o modelo ainda erra
+    # fotos coletadas (boné e colete de EPI): em quantas o modelo ainda erra
     confusoes = []
-    for (item, modo), info in PASTAS.items():
-        pasta_val = Path(info["pasta"]) / "images" / "val"
+    for pasta, item, modo, titulo_c, erro in (
+            ("dados_bone", "capacete", "errado", "Boné confundido com capacete", "marcadas como capacete"),
+            ("dados_colete", "colete", "certo", "Colete de EPI não encontrado", "sem colete detectado")):
+        pasta_val = Path(pasta) / "images" / "val"
         if not pasta_val.is_dir():
             continue
-        print(fraco(f"  testando fotos de {info['o_que']}..."))
+        print(fraco(f"  testando fotos de {pasta}..."))
         depois = contar_erros(melhor, pasta_val, item, modo, dispositivo)
         if not depois:
             continue
-        if modo == "errado":
-            c = {"titulo": f"{info['o_que'].capitalize()} confundido com {item}", "erro": f"marcadas como {item}"}
-        else:
-            c = {"titulo": f"{info['o_que'].capitalize()} não encontrado", "erro": f"sem {item} detectado"}
-        c["depois"] = depois
+        c = {"titulo": titulo_c, "erro": erro, "depois": depois}
         if geral_antes is not None:
             c["antes"] = contar_erros(base, pasta_val, item, modo, dispositivo)
         confusoes.append(c)
