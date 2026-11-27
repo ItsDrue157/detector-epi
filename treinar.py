@@ -13,13 +13,15 @@ Exemplos:
     python treinar.py --retomar                        # continua um treino interrompido
     python treinar.py --log-completo                   # mostra também o log original do YOLO
 
-    # re-treino com as fotos de boné (coletar_bones.py):
-    python treinar.py --dados dados_bone/data.yaml --modelo-base modelos/epi_backup.pt --epocas 50
+    # re-treino partindo do modelo atual, com as fotos do coletar_certo.py / coletar_errado.py:
+    python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
 
 No fim:
-  - o melhor modelo é copiado para  modelos/epi.pt  (usado pelo detectar_epi.py);
+  - o melhor modelo é copiado para  modelos/epi.pt  (usado pelo detectar_epi.py)
+    e o modelo que estava lá vira  modelos/epi_backup.pt  (só um backup, sempre o anterior);
   - aparecem as métricas por classe, comparadas com o modelo base;
-  - se houver fotos de boné, mostra quantas ainda são confundidas com capacete;
+  - para cada coleta, mostra em quantas fotos o modelo ainda erra (EPI falso aceito
+    ou EPI de verdade não encontrado);
   - um relatório é salvo em  treinos/<nome>/relatorio.md
 """
 
@@ -34,6 +36,7 @@ from pathlib import Path
 if "--log-completo" not in sys.argv:
     os.environ.setdefault("YOLO_VERBOSE", "False")
 
+from coleta import PASTAS  # noqa: E402
 from detectar_epi import EXT_IMAGEM, categoria_da_classe  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -106,14 +109,11 @@ def escolher_dispositivo(pedido):
     import torch
     if pedido:
         return pedido, pedido
-    if torch.cuda.is_available():  # também é True para AMD com PyTorch ROCm
-        tipo = "AMD/ROCm" if getattr(torch.version, "hip", None) else "NVIDIA/CUDA"
-        return "0", f"{torch.cuda.get_device_name(0)} ({tipo})"
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return "mps", "GPU do Mac (MPS)"
-    print(amarelo("\n[AVISO] Nenhuma GPU encontrada, treinando na CPU. Vai funcionar, mas é lento.\n"
-                  "        Para um teste rápido use --epocas 20. Para usar a GPU, instale o PyTorch\n"
-                  "        com CUDA (NVIDIA) ou ROCm (AMD) - veja o README."))
+    if torch.cuda.is_available():
+        return "0", f"{torch.cuda.get_device_name(0)} (NVIDIA/CUDA)"
+    print(amarelo("\n[AVISO] Nenhuma GPU NVIDIA encontrada, treinando na CPU. Vai funcionar, mas é lento.\n"
+                  "        Para um teste rápido use --epocas 20. Para usar a GPU (RTX série 40 ou 50),\n"
+                  "        instale com:  pip install -r requirements-gpu.txt"))
     return "cpu", "CPU"
 
 
@@ -228,21 +228,31 @@ def validar(caminho, dados, imgsz, dispositivo, pasta):
     return modelo.names, geral, por_classe
 
 
-def contar_bones(caminho, pasta_imgs, dispositivo, conf=0.40):
-    """Quantas fotos de boné (que não têm capacete) o modelo ainda marca como capacete."""
+def contar_deteccoes(caminho, pasta_imgs, item, dispositivo, conf=0.40):
+    """Em quantas fotos de uma coleta o modelo acha o item (capacete, colete). Devolve (com_item, total)."""
     from ultralytics import YOLO
     imgs = sorted(p for p in Path(pasta_imgs).iterdir() if p.suffix.lower() in EXT_IMAGEM)
     if not imgs:
         return None
     modelo = YOLO(str(caminho))
-    cls_capacete = [i for i, n in modelo.names.items() if categoria_da_classe(n) == "capacete"]
-    if not cls_capacete:
+    classes = [i for i, n in modelo.names.items() if categoria_da_classe(n) == item]
+    if not classes:
         return None
-    erradas = 0
-    for r in modelo.predict([str(p) for p in imgs], conf=conf, classes=cls_capacete, device=dispositivo,
-                            verbose=False, stream=True):
-        erradas += int(r.boxes is not None and len(r.boxes) > 0)
-    return erradas, len(imgs)
+    com_item = 0
+    for p in imgs:  # uma por vez: uma lista inteira viraria um único lote gigante na memória
+        r = modelo.predict(str(p), conf=conf, classes=classes, device=dispositivo, verbose=False)[0]
+        com_item += int(r.boxes is not None and len(r.boxes) > 0)
+    return com_item, len(imgs)
+
+
+def contar_erros(caminho, pasta_imgs, item, modo, dispositivo):
+    """Fotos em que o modelo erra: na coleta "errado", as que ainda viram EPI;
+    na coleta "certo", as em que o EPI de verdade não é encontrado."""
+    r = contar_deteccoes(caminho, pasta_imgs, item, dispositivo)
+    if not r:
+        return None
+    com_item, total = r
+    return (com_item if modo == "errado" else total - com_item), total
 
 
 def tabela_classes(nomes, por_classe, antes):
@@ -270,7 +280,7 @@ def _sem_cor(texto):
     return re.sub(r"\033\[[0-9;]*m", "", texto)
 
 
-def relatorio_md(caminho, args, disp_nome, duracao_total, geral, geral_antes, linhas_md, bones,
+def relatorio_md(caminho, args, disp_nome, duracao_total, geral, geral_antes, linhas_md, confusoes,
                  pasta_treino):
     def lin(chave, nome):
         a = f"{geral_antes[chave]:.3f}" if geral_antes else "-"
@@ -302,13 +312,13 @@ def relatorio_md(caminho, args, disp_nome, duracao_total, geral, geral_antes, li
         "|---|---|---|---|---|---|---|",
         *linhas_md,
     ]
-    if bones:
-        texto += ["", "## Boné confundido com capacete (fotos de validação)", ""]
-        if bones.get("antes"):
-            e, n = bones["antes"]
-            texto.append(f"- Antes: {e} de {n} fotos ({e / n:.0%})")
-        e, n = bones["depois"]
-        texto.append(f"- Depois: {e} de {n} fotos ({e / n:.0%})")
+    for c in confusoes:
+        texto += ["", f"## {c['titulo']} (fotos de validação)", ""]
+        if c.get("antes"):
+            e, n = c["antes"]
+            texto.append(f"- Antes: {e} de {n} fotos {c['erro']} ({e / n:.0%})")
+        e, n = c["depois"]
+        texto.append(f"- Depois: {e} de {n} fotos {c['erro']} ({e / n:.0%})")
     texto += [
         "",
         "## Gráficos",
@@ -344,7 +354,7 @@ def main():
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16, help="diminua (8, 4) se faltar memória")
     ap.add_argument("--paciencia", type=int, default=25, help="para antes se não melhorar por N épocas")
-    ap.add_argument("--dispositivo", default=None, help="'cpu', '0', 'mps'. Padrão: automático")
+    ap.add_argument("--dispositivo", default=None, help="'cpu' ou '0' (NVIDIA). Padrão: automático")
     ap.add_argument("--workers", type=int, default=4, help="use 0 se der erro no Windows")
     ap.add_argument("--nome", default="epi", help="nome da pasta do treino em treinos/")
     ap.add_argument("--retomar", action="store_true", help="retoma o último treino com este --nome")
@@ -419,22 +429,31 @@ def main():
         except Exception as e:
             print(fraco(f"  (não deu para validar o modelo base: {e})"))
 
-    bones = None
-    pasta_bones = Path(args.dados).parent / "images" / "val"
-    if pasta_bones.is_dir():
-        print(fraco("  testando fotos de boné..."))
-        bones = {"depois": contar_bones(melhor, pasta_bones, dispositivo)}
+    # fotos do coletar_certo.py / coletar_errado.py: em quantas o modelo ainda erra
+    confusoes = []
+    for (item, modo), info in PASTAS.items():
+        pasta_val = Path(info["pasta"]) / "images" / "val"
+        if not pasta_val.is_dir():
+            continue
+        print(fraco(f"  testando fotos de {info['o_que']}..."))
+        depois = contar_erros(melhor, pasta_val, item, modo, dispositivo)
+        if not depois:
+            continue
+        if modo == "errado":
+            c = {"titulo": f"{info['o_que'].capitalize()} confundido com {item}", "erro": f"marcadas como {item}"}
+        else:
+            c = {"titulo": f"{info['o_que'].capitalize()} não encontrado", "erro": f"sem {item} detectado"}
+        c["depois"] = depois
         if geral_antes is not None:
-            bones["antes"] = contar_bones(base, pasta_bones, dispositivo)
-        if not bones["depois"]:
-            bones = None
+            c["antes"] = contar_erros(base, pasta_val, item, modo, dispositivo)
+        confusoes.append(c)
 
     # ----- copia o modelo para modelos/epi.pt ------------------------------- #
     destino = Path("modelos") / "epi.pt"
     destino.parent.mkdir(exist_ok=True)
     anterior = None
-    if destino.exists():  # guarda o modelo anterior para poder voltar
-        anterior = destino.with_name(f"epi_anterior_{time.strftime('%Y%m%d_%H%M%S')}.pt")
+    if destino.exists():  # guarda o modelo anterior para poder voltar (substitui o backup antigo)
+        anterior = destino.with_name("epi_backup.pt")
         shutil.copy(destino, anterior)
     shutil.copy(melhor, destino)
 
@@ -453,24 +472,24 @@ def main():
     print()
     linhas_md = tabela_classes(nomes, por_classe, antes)
 
-    if bones:
+    for c in confusoes:
         print()
-        print(negrito("  Boné confundido com capacete") + fraco("  (fotos de boné da validação)"))
+        print(negrito(f"  {c['titulo']}") + fraco("  (fotos coletadas da validação)"))
         print()
-        e, n = bones["depois"]
-        if bones.get("antes"):
-            ea, na = bones["antes"]
-            print(f"  antes   {barra(1 - ea / na)}  {ea} de {na} fotos marcadas como capacete")
-        print(f"  depois  {barra(1 - e / n)}  {negrito(e)} de {n} fotos marcadas como capacete")
+        e, n = c["depois"]
+        if c.get("antes"):
+            ea, na = c["antes"]
+            print(f"  antes   {barra(1 - ea / na)}  {ea} de {na} fotos {c['erro']}")
+        print(f"  depois  {barra(1 - e / n)}  {negrito(e)} de {n} fotos {c['erro']}")
 
     rel = pasta_treino / "relatorio.md"
-    relatorio_md(rel, args, disp_nome, duracao_total, geral, geral_antes, linhas_md, bones, pasta_treino)
+    relatorio_md(rel, args, disp_nome, duracao_total, geral, geral_antes, linhas_md, confusoes, pasta_treino)
 
     print()
     print(fraco("  " + "─" * (LARG - 4)))
     linha_info("Modelo novo", verde(str(destino.resolve())))
     if anterior:
-        linha_info("Modelo antigo", str(anterior))
+        linha_info("Backup", f"{anterior}  (modelo anterior)")
     linha_info("Relatório", str(rel.resolve()))
     linha_info("Gráficos", str(pasta_treino.resolve()))
     print()

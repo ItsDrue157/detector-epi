@@ -13,28 +13,33 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-Depois instale conforme o seu computador:
+Depois instale conforme o computador:
 
-| Seu computador | Comando de instalação |
+| Computador | Comando de instalação |
 |---|---|
-| **Placa NVIDIA** | `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128` e depois `pip install -r requirements.txt` |
-| **Placa AMD** (Windows 11 24H2 ou mais novo) | `pip install -r requirements-amd.txt` (num venv **novo**, sem o requirements.txt) |
-| **Placa AMD** (Windows 10) | `pip install -r requirements-amd-win10.txt` (num venv **novo**, com Python 3.12) |
-| **Sem placa de vídeo** (só CPU) | `pip install -r requirements.txt` |
+| **Só CPU** (PC da apresentação) | `pip install -r requirements.txt` |
+| **Placa NVIDIA RTX série 40 ou 50** (4060, 5060...) | `pip install -r requirements-gpu.txt` |
 
 > Toda vez que abrir um terminal novo, ative o ambiente com `venv\Scripts\activate` antes de rodar os comandos.
+
+Para conferir se a placa NVIDIA foi reconhecida: `python -c "import torch; print(torch.cuda.is_available())"` tem que mostrar `True`.
 
 ---
 
 ## 2. Rodar o detector
 
-| Seu computador | Comando |
+| Computador | Comando |
 |---|---|
-| Placa NVIDIA | `python detectar_epi.py` |
-| Placa AMD | `python detectar_epi.py --dispositivo amd` |
-| Só CPU | `python detectar_epi.py --dispositivo cpu` |
+| **Só CPU** (padrão) | `python detectar_epi.py` |
+| **Placa NVIDIA** | `python detectar_epi.py --gpu` |
 
-Na placa AMD, a primeira execução demora um pouco mais porque converte os modelos para ONNX. Depois fica rápido.
+| | CPU | GPU |
+|---|---|---|
+| Tamanho da imagem no modelo | 480 | 640 |
+| Detector de pessoa | `yolo26n.pt` (leve), a cada 3 frames | `yolo26s.pt`, em todo frame |
+| FPS medido | ~26 (Intel 12ª geração) | ~40 (RTX 5060) |
+
+No conjunto de teste, a precisão na CPU (mAP50 0,833) é praticamente a mesma da GPU (0,834).
 
 **Teclas na janela:**
 
@@ -51,106 +56,94 @@ Na placa AMD, a primeira execução demora um pouco mais porque converte os mode
 | Capacete | na cabeça da pessoa |
 | Colete | no tronco da pessoa |
 
-O modelo foi treinado também com as classes `Balaclava`, `C_eletrica` e `Operacional`, mas elas ficam desligadas e não aparecem na tela.
-
 **Cores:** caixa **verde** = pessoa com todo o EPI. Caixa **vermelha** = falta capacete ou colete.
 
 Quando alguém fica sem EPI por alguns segundos, o programa toca um bipe, salva uma foto e anota em `ocorrencias/registro.csv`.
 
 ---
 
-## 3. Opções mais usadas
-
-Os argumentos podem ir em **qualquer ordem**. Os que levam valor precisam do valor logo em seguida.
+## 3. Opções
 
 | Argumento | O que faz | Exemplo |
 |---|---|---|
-| `--dispositivo` | onde roda: `amd`, `cpu` ou `0` (NVIDIA) | `--dispositivo amd` |
-| `--fonte` | câmera, vídeo, foto ou câmera IP | `--fonte 1`, `--fonte video.mp4` |
-| `--sem-som` | desliga o bipe | `--sem-som` |
+| `--fonte` | de onde vem a imagem: webcam, vídeo, foto ou câmera IP | `--fonte 1`, `--fonte video.mp4`, `--fonte foto.jpg`, `--fonte "rtsp://usuario:senha@192.168.0.10:554/stream"` |
+| `--gpu` | roda na placa NVIDIA | `--gpu` |
 | `--exigir` | quais EPIs cobrar | `--exigir capacete` |
-| `--conf` | confiança mínima geral (padrão 0.40) | `--conf 0.5` |
-| `--conf-capacete` | confiança mínima só do capacete | `--conf-capacete 0.7` |
-| `--conf-colete` | confiança mínima só do colete | `--conf-colete 0.6` |
-| `--salvar` | grava o vídeo com as marcações | `--salvar resultado.mp4` |
+| `--salvar` | grava o vídeo/foto com as marcações | `--salvar resultado.mp4` |
+| `--sem-som` | desliga o bipe | `--sem-som` |
 
-Exemplo completo:
+Exemplo:
 
 ```bash
-python detectar_epi.py --dispositivo amd --conf-capacete 0.7 --sem-som
+python detectar_epi.py --fonte video.mp4 --salvar resultado.mp4 --sem-som
 ```
 
-> Use **ponto** nos números: `0.7` funciona, `0,7` dá erro.
+**Ajustes finos** (confiança mínima, confiança só do capacete ou do colete, tempo entre alertas, resolução da webcam) ficam no topo do `detectar_epi.py`, na seção **Configuração**. Edite o valor lá e rode de novo.
 
 ---
 
-## 4. O detector confunde boné com capacete
+## 4. Re-treinar o modelo (ex.: boné, colete)
 
-### Solução rápida: aumentar a confiança do capacete
+Faça o treino **no PC com a RTX**. Na CPU ele leva horas.
 
-1. Rode o detector e aponte para alguém **de boné**. Veja o número na caixa (ex.: `Capacete 0.52`).
-2. Aponte para alguém **de capacete**. Veja o número (ex.: `Capacete 0.85`).
-3. Use um valor no meio:
+**Modelos na pasta `modelos/`:**
 
-```bash
-python detectar_epi.py --conf-capacete 0.7
-```
+| Arquivo | O que é |
+|---|---|
+| `epi.pt` | modelo atual (usado pelo detector) |
+| `epi_backup.pt` | o modelo anterior. A cada treino, o `epi.pt` antigo vira o novo backup |
+| `yolo26n.pt`, `yolo26s.pt` | detectores de pessoa (não apagar) |
 
-Se o boné ainda passar, aumente (`0.75`, `0.8`). Se o capacete de verdade parar de ser reconhecido, diminua (`0.6`).
+**Passo 1: coletar fotos**
 
-Se os dois números forem muito parecidos, essa solução não resolve. Faça o re-treino abaixo.
+São dois scripts, um para cada problema:
 
-### Solução definitiva: re-treinar o modelo
+| Problema | Script | O que filmar | Fotos vão para |
+|---|---|---|---|
+| O modelo **não acha** o colete de EPI | `python coletar_certo.py` | só gente de **colete de EPI** | `dados_colete_certo/` |
+| O modelo acha colete **onde não tem** (colete de futebol) | `python coletar_errado.py` | só gente de **colete de futebol** | `dados_colete_errado/` |
 
-Faça o treino num PC com **placa NVIDIA**. Na CPU ou na AMD com Windows ele leva horas.
+Os dois aceitam `--item capacete` (capacete de EPI / boné, que vai para `dados_bone/`) e `--fonte video.mp4` para usar um vídeo gravado.
 
-**Passo 1: coletar fotos de boné**
-
-```bash
-python coletar_bones.py
-```
-
-- Coloque alguém **de boné** na frente da câmera, se mexendo: de frente, de lado, perto e longe.
+Nos dois:
+- Coloque a pessoa na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
 - Aperte `a` para salvar uma foto por segundo automaticamente (ou `espaço` para salvar uma por vez). `q` sai.
-- Na tela: em **verde** o que vai como rótulo (colete etc.). **Riscado em vermelho** o "capacete" que é boné, que será descartado.
-- Junte **de 150 a 300 fotos**, com bonés de cores diferentes e pessoas diferentes, se der.
-- Se preferir, grave um vídeo antes e use: `python coletar_bones.py --fonte video.mp4`
+- Junte **de 150 a 300 fotos** em cada um, com cores e pessoas diferentes, se der.
 
-> ⚠️ **Não deixe aparecer capacete de verdade durante a coleta.** Ele seria ensinado como se não fosse capacete.
+No `coletar_certo.py`:
+- Em **verde grosso** aparece o colete que vai ser rotulado como EPI. Como ali só tem colete de verdade, ele aceita até detecções fracas.
+- Se aparecer **"colete não encontrado: aperte M"**, aperte `m`: a imagem congela. Arraste uma caixa sobre cada colete, aperte `ENTER` a cada caixa e `ESC` para salvar. Essas fotos são as que mais ensinam o modelo.
+- No automático, ele só salva as fotos em que achou o colete. As outras, marque com `m`.
 
-As fotos ficam na pasta `dados_bone/`. Dá para rodar o script várias vezes; ele vai somando as fotos.
+No `coletar_errado.py`:
+- **Riscado em vermelho** fica o "colete" que é o de futebol: ele é descartado e ensinado como "não é colete".
 
-**Passo 2: treinar**
+> ⚠️ **Não misture:** no `coletar_certo.py` só colete de EPI; no `coletar_errado.py` só colete de futebol. Um colete de EPI que aparecer no "errado" é ensinado como se não fosse EPI.
 
-```bash
-python treinar.py --dados dados_bone/data.yaml --modelo-base modelos/epi_backup.pt --epocas 50
-```
-
-- Junta o dataset original (pasta `teste/`) com as suas fotos de boné.
-- Leva uns 20 a 40 minutos numa placa NVIDIA.
-- No final, o novo modelo vira o `modelos/epi.pt`. O anterior é guardado como `modelos/epi_anterior_<data>.pt`.
-
-**Passo 3: testar**
+**Passo 2: treinar, partindo do modelo atual**
 
 ```bash
-python detectar_epi.py --sem-som
+python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
 ```
 
-Se ainda confundir, colete mais fotos **justamente das situações em que errou** e treine de novo.
+- O `dados_treino.yaml` é atualizado sozinho pelos scripts de coleta e junta o dataset original com **todas** as fotos coletadas (boné, colete certo e colete errado). Assim o modelo aprende o colete sem esquecer o boné.
+- Leva uns 20 a 40 minutos na RTX.
+- No final aparece, para cada coleta, em quantas fotos o modelo ainda erra, antes e depois do treino: colete de futebol marcado como colete, e colete de EPI não encontrado.
+- O novo modelo vira o `modelos/epi.pt` e o anterior vira o `modelos/epi_backup.pt`.
 
-**Passo 4: levar para a máquina AMD (se for o caso)**
+**Passo 3: testar e levar para o PC da apresentação**
 
-Copie o novo `modelos/epi.pt` para a máquina AMD e **apague os arquivos `modelos/*.onnx`** de lá. Na próxima execução ele converte o modelo novo sozinho.
+```bash
+python detectar_epi.py --gpu --sem-som
+```
 
-### Voltar ao modelo antigo
+Se ficou bom, copie o `modelos/epi.pt` para o PC da apresentação (ou faça `git pull` lá).
 
-Se o modelo novo ficou pior:
+### Voltar ao modelo anterior
 
 ```bash
 copy modelos\epi_backup.pt modelos\epi.pt
 ```
-
-Na máquina AMD, apague também os `modelos/*.onnx`.
 
 ---
 
@@ -158,11 +151,12 @@ Na máquina AMD, apague também os `modelos/*.onnx`.
 
 | Problema | Solução |
 |---|---|
-| `error: argument --conf-capacete: expected one argument` | Faltou o número: use `--conf-capacete 0.7` |
-| Na AMD aparece `Using ONNX Runtime ... with CPUExecutionProvider` | Não achou a GPU. Atualize o driver AMD (Adrenalin) e o Windows. Rode `pip uninstall onnxruntime` (deixe só o `onnxruntime-windowsml`) |
-| Webcam não abre | Tente `--fonte 1` ou `--fonte 2` |
-| Muito lento | Use `--imgsz 480`, ou rode na GPU (`--dispositivo amd` ou NVIDIA) |
-| Muitos alarmes falsos | Aumente `--conf` (ex.: `0.5`) ou `--frames-confirmacao` (ex.: `15`) |
+| Webcam não abre | Tente `--fonte 1` ou `--fonte 2`. Feche outros programas que usam a câmera |
+| Câmera IP não abre | Teste a URL no VLC primeiro (Mídia → Abrir fluxo de rede). Coloque a URL entre aspas |
+| `--gpu` diz que não achou placa NVIDIA | Instale com `pip install -r requirements-gpu.txt` num venv novo e atualize o driver da NVIDIA |
+| Muito lento na CPU | Feche navegador e outros programas pesados. Use o notebook na tomada (na bateria a CPU fica mais lenta) |
+| Aparece `'modelos/yolo26n.pt' não encontrado` | Atualize o projeto (`git pull`). Sem ele o programa usa o `yolo26s.pt`, que é mais lento |
+| Muitos alarmes falsos | Aumente `CONF` (ex.: `0.5`) ou `FRAMES_CONFIRMACAO` (ex.: `15`) no topo do `detectar_epi.py` |
 | Erro de memória no treino (`CUDA out of memory`) | Adicione `--batch 8` ao comando do treino |
 | Erro de multiprocessing no treino (Windows) | Adicione `--workers 0` ao comando do treino |
 | Treino diz que não acha `train/images` | Confira se a pasta `teste/` tem `train/images` e `valid/images` |

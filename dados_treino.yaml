@@ -1,0 +1,10 @@
+# gerado pelos scripts de coleta: dataset original + fotos coletadas
+# caminhos relativos a esta pasta
+train:
+  - teste/train/images
+  - dados_bone/images/train
+val:
+  - teste/valid/images
+  - dados_bone/images/val
+nc: 5
+names: ['Balaclava', 'C_eletrica', 'Capacete', 'Operacional', 'colete']

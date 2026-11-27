@@ -2,136 +2,91 @@
 
 > **Guia rápido de uso:** veja o [COMO_USAR.md](COMO_USAR.md).
 
-Detecta em tempo real, pela webcam (ou vídeo, imagem, câmera IP), se cada pessoa está usando **capacete** e **colete**. Quem estiver sem EPI fica com a caixa vermelha. O programa também toca um bipe e salva uma foto mais uma linha em `ocorrencias/registro.csv`.
+Detecta em tempo real, pela webcam (ou vídeo, foto, câmera IP), se cada pessoa está usando **capacete** e **colete**. Quem estiver sem EPI fica com a caixa vermelha. O programa também toca um bipe e salva uma foto mais uma linha em `ocorrencias/registro.csv`.
 
 ```
 detector_epi/
-├── detectar_epi.py    # detecção em tempo real (webcam/vídeo/imagem)
-├── baixar_modelo.py   # baixa um modelo de EPI JÁ TREINADO (mais fácil)
-├── treinar.py         # OU treina o seu próprio modelo
-├── requirements.txt
-└── modelos/epi.pt     # criado pelo baixar_modelo.py ou pelo treinar.py
+├── detectar_epi.py        # detecção em tempo real (webcam/vídeo/foto/câmera IP)
+├── treinar.py             # treina/re-treina o modelo (na GPU NVIDIA)
+├── coletar_certo.py       # coleta fotos de EPI de verdade (rótulo de certo)
+├── coletar_errado.py      # coleta fotos do que parece EPI mas não é (colete de futebol, boné)
+├── coleta.py              # parte comum dos dois scripts de coleta
+├── dados_treino.yaml      # dataset de treino: original + todas as coletas (gerado)
+├── requirements.txt       # instalação só CPU
+├── requirements-gpu.txt   # instalação com GPU NVIDIA (RTX série 40 ou 50)
+├── modelos/
+│   ├── epi.pt             # modelo de EPI atual
+│   ├── epi_backup.pt      # modelo anterior (atualizado a cada treino)
+│   ├── yolo26n.pt         # detector de pessoa leve (CPU)
+│   └── yolo26s.pt         # detector de pessoa (GPU)
+├── teste/                 # dataset original (Roboflow)
+├── dados_bone/            # fotos de boné coletadas
+├── dados_colete_certo/    # fotos de colete de EPI coletadas
+├── dados_colete_errado/   # fotos de colete de futebol coletadas
+└── tcc/                   # relatório e gráficos do re-treino
 ```
 
-## Jeito mais rápido (modelo já incluído)
+## Modelos
 
-O repositório já vem com o modelo pronto:
-
-- `modelos/epi.pt` é um YOLO26s treinado no dataset brasileiro de EPI [anderson-vlsev/epi-d4clr](https://universe.roboflow.com/anderson-vlsev/epi-d4clr) (Roboflow, CC BY 4.0).
-- `modelos/yolo26s.pt` são os pesos COCO da Ultralytics. O modelo de EPI não tem classe de pessoa, então o script usa este modelo só para achar as pessoas (`--modelo-pessoa`).
-
-```bash
-pip install -r requirements.txt
-python detectar_epi.py       # abre a webcam
-```
-
-> **Atenção:** o `baixar_modelo.py` e o `treinar.py` **substituem** o `modelos/epi.pt`.
-
-### Classes usadas
+- `modelos/epi.pt` é um YOLO26s treinado no dataset brasileiro de EPI [anderson-vlsev/epi-d4clr](https://universe.roboflow.com/anderson-vlsev/epi-d4clr) (Roboflow, CC BY 4.0) e re-treinado com fotos de boné.
+- `modelos/yolo26n.pt` e `modelos/yolo26s.pt` são os pesos COCO da Ultralytics. O modelo de EPI não tem classe de pessoa, então o detector usa um deles só para achar as pessoas: o `yolo26n` (mais leve) na CPU e o `yolo26s` na GPU.
 
 | Classe do modelo | Uso no detector | Onde é procurada |
 |---|---|---|
 | `Capacete` | capacete | região da cabeça |
 | `colete` | colete | região do tronco |
-| `person` (de `yolo26s.pt`) | pessoa | caixa de cada trabalhador |
+| `person` (de `yolo26n`/`yolo26s`) | pessoa | caixa de cada trabalhador |
 
-O dataset também tem as classes `Balaclava`, `C_eletrica` e `Operacional`, mas elas não são usadas: o detector filtra essas classes e não as mostra na tela.
+O dataset também tem as classes `Balaclava`, `C_eletrica` e `Operacional`. Elas são filtradas já na inferência e não aparecem na tela.
 
 ## 1. Instalação
 
-Use Python 3.9 a 3.12.
+Use Python 3.10 a 3.12.
 
 ```bash
 python -m venv venv
-# Windows:
 venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
 
-pip install -r requirements.txt
+pip install -r requirements.txt        # só CPU
+pip install -r requirements-gpu.txt    # ou: GPU NVIDIA RTX série 40/50
 ```
 
-**Tem placa NVIDIA?** Instale o PyTorch com CUDA *antes* do requirements. O treino fica umas 20× mais rápido.
-Pegue o comando em https://pytorch.org/get-started/locally/. Exemplo:
+O `requirements-gpu.txt` instala o PyTorch do índice CUDA 12.8, que é obrigatório para as RTX 50 e funciona nas RTX 40.
+
+O `requirements.txt` instala o PyTorch **só de CPU**, de propósito. A versão com CUDA carrega bibliotecas que a CPU não usa: medido no modo CPU, o programa ocupa ~880 MB de RAM com o PyTorch CUDA e ~585 MB com o de CPU, na mesma velocidade. Por isso o PC da apresentação deve usar o `requirements.txt`, e não o de GPU.
+
+## 2. Hardware
+
+São dois modos, escolhidos pelo `--gpu`:
+
+| | CPU (padrão) | GPU (`--gpu`) |
+|---|---|---|
+| Uso | apresentação, PC sem placa NVIDIA | PC com RTX 40/50, e treino |
+| Imagem no modelo | 480 | 640 |
+| Detector de pessoa | `yolo26n`, a cada 3 frames | `yolo26s`, todo frame |
+| Tempo por frame | ~38 ms (~26 FPS, Intel 12ª geração) | ~25 ms (~40 FPS, RTX 5060) |
+| mAP50 no teste | 0,833 | 0,834 |
+
+Otimizações do modo CPU, todas medidas:
+
+- **Imagem 480 em vez de 640:** 1,45× mais rápido no modelo de EPI, sem perda no mAP50. O mAP50-95 do colete cai um pouco (0,68 → 0,62).
+- **Detector de pessoa nano a cada 3 frames:** 18 ms contra 48 ms do `yolo26s`, e achou 28 das 30 pessoas que o `yolo26s` achou. Pessoas mudam pouco entre frames, e o alerta já espera 8 frames seguidos.
+- **Captura em thread:** webcam e câmera IP são lidas numa thread que guarda só o frame mais recente. Sem isso, com a CPU mais lenta que a câmera, a imagem vai ficando atrasada.
+- Testado e descartado: ONNX Runtime na CPU ficou **mais lento** que o PyTorch (72 ms contra 48 ms em 640).
+
+Se a placa não for RTX 40 ou 50, o `--gpu` avisa mas roda mesmo assim. Sem placa NVIDIA, ele cai para a CPU.
+
+## 3. Rodar
 
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-```
-
-> Placas RTX 50 (5060, 5070...) precisam do CUDA 12.8 ou mais novo (`cu128`). Para conferir se a GPU está sendo usada: `python -c "import torch; print(torch.cuda.is_available())"` tem que mostrar `True`.
-
-### Sem placa NVIDIA: GPU AMD ou só CPU
-
-**Só CPU (qualquer PC):** o `pip install -r requirements.txt` já instala o PyTorch para CPU. Rode com:
-
-```bash
-python detectar_epi.py --dispositivo cpu
-```
-
-Funciona igual, só que com menos FPS. Para ganhar velocidade na CPU, use `--imgsz 480` ou veja a dica de OpenVINO no final.
-
-**GPU AMD no Windows 11 (24H2 ou mais novo):** use o Windows ML, que roda o modelo em ONNX na placa AMD (também serve para Intel Arc). Num venv **limpo**:
-
-```bash
-pip install -r requirements-amd.txt
-python detectar_epi.py --dispositivo amd
-```
-
-- Na primeira execução os modelos `.pt` são convertidos para `modelos/epi_640.onnx` e `modelos/yolo26s_640.onnx`. Depois disso a conversão não se repete. Se mudar o `--imgsz`, ele gera outro arquivo.
-- No início aparece `Using ONNX Runtime ... with ...`, que mostra onde o modelo está rodando. Se aparecer `CPUExecutionProvider`, ele não achou a GPU: atualize o driver da AMD (Adrenalin) e o Windows, e confira se o pacote `onnxruntime` comum **não** está instalado (`pip uninstall onnxruntime`).
-- Em Windows mais antigo que o 24H2, o Windows ML não funciona. Use o DirectML (veja abaixo).
-
-**GPU AMD no Windows 10 (ou Windows 11 antes do 24H2):** use o DirectML. Num venv **limpo**, com Python 3.12:
-
-```bash
-pip install -r requirements-amd-win10.txt
-python detectar_epi.py --dispositivo amd
-```
-
-- No início aparece `GPU via DirectML (Windows 10).`. Se aparecer o aviso de que o DirectML não foi encontrado, confira se o pacote `onnxruntime` comum **não** está instalado (`pip uninstall onnxruntime`) e reinstale o `onnxruntime-directml`.
-
-**GPU AMD no Linux (ROCm):** instale o PyTorch com ROCm antes do requirements (comando em https://pytorch.org/get-started/locally/, opção ROCm) e rode normalmente com `--dispositivo 0`. Nesse caso o treino (`treinar.py`) também usa a GPU AMD.
-
-> O treino (`treinar.py`) precisa de PyTorch com CUDA ou ROCm para usar a GPU. Numa AMD no Windows ele roda na CPU, e é bem lento. Uma alternativa é treinar no Google Colab e copiar o `epi.pt` para a pasta `modelos/`.
-
-## 2. Conseguir o modelo
-
-### Opção A: baixar um modelo pronto (recomendado para começar)
-
-```bash
-python baixar_modelo.py
-```
-
-Ele baixa o **SafetyVision YOLOv8s**, treinado por terceiros em cerca de 80 mil imagens de obras e indústrias (https://huggingface.co/ayushgupta7777/safetyvision-yolov8). Detecta Hardhat, NO-Hardhat, Safety Vest, NO-Safety Vest e Person, entre outras classes. Segundo o autor, capacete é a classe em que ele vai melhor. A detecção direta de "sem colete" é a mais fraca, mas o `detectar_epi.py` não depende dela: ele marca "SEM COLETE" quando não encontra um colete no tronco da pessoa.
-
-Se o download pelo script falhar, baixe pelo navegador o arquivo
-https://huggingface.co/ayushgupta7777/safetyvision-yolov8/resolve/main/v2/best.pt
-e salve como `modelos/epi.pt`.
-
-### Opção B: treinar o seu (uma vez só)
-
-```bash
-python treinar.py
-```
-
-- Na primeira execução, o dataset aberto **Construction-PPE** da Ultralytics é baixado sozinho (cerca de 180 MB), junto com os pesos iniciais `yolo26n.pt`.
-- O melhor modelo vai para `modelos/epi.pt`. No final aparecem as métricas (mAP) de cada classe.
-- Tempo aproximado: de 15 a 40 min numa GPU comum. Na CPU são várias horas. Para testar rápido, use `python treinar.py --epocas 20`.
-
-Opções úteis:
-
-| Comando | Para quê |
-|---|---|
-| `--modelo-base yolo26s.pt` | modelo maior, mais preciso e um pouco mais lento |
-| `--batch 8` | se der erro de memória (CUDA out of memory) |
-| `--workers 0` | se der erro de multiprocessing no Windows |
-| `--retomar` | continua um treino que foi interrompido |
-| `--dados caminho/data.yaml` | treina com o **seu** dataset (ex.: exportado do Roboflow em formato YOLO) |
-
-## 3. Rodar na webcam
-
-```bash
-python detectar_epi.py
+python detectar_epi.py                               # webcam, CPU
+python detectar_epi.py --gpu                         # webcam, GPU NVIDIA
+python detectar_epi.py --fonte 1                     # outra webcam
+python detectar_epi.py --fonte video.mp4 --salvar resultado.mp4
+python detectar_epi.py --fonte foto.jpg              # gera foto_epi.jpg
+python detectar_epi.py --fonte "rtsp://user:senha@192.168.0.10:554/stream"
+python detectar_epi.py --exigir capacete             # cobra só capacete
+python detectar_epi.py --sem-som
 ```
 
 | Tecla | Ação |
@@ -140,52 +95,54 @@ python detectar_epi.py
 | `p` | pausar |
 | `s` | salvar print em `ocorrencias/` |
 
-Outros exemplos:
-
-```bash
-python detectar_epi.py --fonte 1                     # outra webcam
-python detectar_epi.py --fonte video.mp4 --salvar resultado.mp4
-python detectar_epi.py --fonte foto.jpg              # gera foto_epi.jpg
-python detectar_epi.py --fonte "rtsp://user:senha@192.168.0.10:554/stream"
-python detectar_epi.py --exigir capacete             # cobra só capacete
-python detectar_epi.py --conf 0.5                    # menos falsos positivos
-python detectar_epi.py --sem-som
-python detectar_epi.py --dispositivo amd             # GPU AMD (Windows ML)
-python detectar_epi.py --dispositivo cpu             # só processador
-```
+Os ajustes finos ficam como constantes no topo do `detectar_epi.py` (seção **Configuração**): `CONF`, `CONF_CAPACETE`, `CONF_COLETE`, `IOU`, `LARGURA`/`ALTURA` da webcam, `INTERVALO_ALERTA` e `FRAMES_CONFIRMACAO`.
 
 ## Como a verificação funciona
 
-1. O YOLO detecta pessoas, capacetes, coletes e também as classes de "sem capacete" e "sem colete" que o dataset tiver.
+1. O YOLO de EPI detecta capacetes e coletes, e o YOLO COCO detecta as pessoas.
 2. Para cada pessoa, o programa procura um capacete na **região da cabeça** (topo da caixa) e um colete na **região do tronco**.
-3. A pessoa fica **verde** se tiver tudo o que é exigido e **vermelha** se faltar algo, ou se o modelo detectar diretamente "sem capacete"/"sem colete" nela.
-4. O alerta (bipe, foto e CSV) só dispara quando a infração aparece em vários frames seguidos (`--frames-confirmacao`, padrão 8). Assim um frame ruim não gera alarme falso. Entre um alerta e outro há um intervalo de `--intervalo-alerta` segundos.
+3. A pessoa fica **verde** se tiver tudo o que é exigido e **vermelha** se faltar algo.
+4. O alerta (bipe, foto e CSV) só dispara quando a infração aparece em vários frames seguidos (`FRAMES_CONFIRMACAO`, padrão 8). Assim um frame ruim não gera alarme falso. Entre um alerta e outro há um intervalo de `INTERVALO_ALERTA` segundos (padrão 5).
 
-As classes são reconhecidas **pelo nome** (helmet, hardhat, hard_hat, vest, jacket, person, worker, no_helmet, NO-Hardhat, NO-Safety Vest, helmet_off…). Por isso você pode usar outro modelo de EPI pronto com `--modelo outro_modelo.pt`, sem mexer no código. Ao abrir, o programa mostra as classes que vai usar. As que não forem reconhecidas são filtradas e não aparecem na tela.
+As classes são reconhecidas **pelo nome** (helmet, hardhat, capacete, vest, colete, person, no_helmet, NO-Hardhat…), então outro modelo de EPI funciona trocando o `MODELO_EPI` no topo do arquivo.
 
-## Ensinar o modelo que boné não é capacete
+## 4. Treinar
 
-1. Grave pessoas de **boné** (sem capacete de verdade!) com a câmera do local:
-   ```bash
-   python coletar_bones.py                  # webcam: espaço salva, "a" salva sozinho a cada 1 s
-   python coletar_bones.py --fonte bones.mp4   # ou um vídeo já gravado
-   ```
-   Cada foto já sai rotulada: o colete e os outros EPIs que o modelo achou viram rótulo, e o "capacete" (que é o boné) é descartado. Junte de 150 a 300 fotos, com bonés de cores e ângulos diferentes.
-2. Treine juntando o dataset original com as fotos novas, partindo do modelo atual:
-   ```bash
-   python treinar.py --dados dados_bone/data.yaml --modelo-base modelos/epi_backup.pt --epocas 50
-   ```
-   O `treinar.py` guarda o modelo anterior como `modelos/epi_anterior_<data>.pt` antes de substituir o `epi.pt`.
-3. Teste com `python detectar_epi.py`. Se ficar pior, copie o modelo anterior de volta para `modelos/epi.pt`.
+Treine no PC com a RTX. O `treinar.py` acha a GPU sozinho.
 
-## Dicas para melhorar a precisão
+```bash
+python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
+```
 
-- **Boné ou chapéu sendo aceito como capacete:** veja o número que aparece na caixa do boné e na de um capacete de verdade, e use um `--conf-capacete` entre os dois (ex.: `--conf-capacete 0.7`). O mesmo vale para `--conf-colete` com camisas coloridas. Se os números forem parecidos, só re-treinando com fotos de boné resolve (veja abaixo).
-- Teste com as câmeras e a iluminação reais do seu local. Se errar muito, grave alguns minutos, rotule cerca de 200 a 500 imagens (Roboflow ou CVAT, formato YOLO) e treine com `--dados`.
-- Pessoas muito pequenas na imagem: use `--imgsz 960` no treino e na detecção, ou um modelo maior (`yolo26s.pt`/`yolo26m.pt`).
-- Para rodar mais rápido na CPU, exporte para ONNX/OpenVINO:
-  `yolo export model=modelos/epi.pt format=openvino` e depois `--modelo modelos/epi_openvino_model`.
+- O melhor modelo vai para `modelos/epi.pt` e o que estava lá vira `modelos/epi_backup.pt`. Fica sempre só um backup: o modelo anterior.
+- No final aparecem as métricas por classe comparadas com o modelo base, e um relatório em `treinos/<nome>/relatorio.md`.
+- Para voltar: `copy modelos\epi_backup.pt modelos\epi.pt`.
 
-## Licença do dataset
+| Opção | Para quê |
+|---|---|
+| `--dados caminho/data.yaml` | dataset a usar (formato YOLO, ex.: exportado do Roboflow) |
+| `--modelo-base modelos/epi.pt` | parte do modelo atual em vez de começar do zero |
+| `--epocas 50` | número de épocas |
+| `--batch 8` | se der erro de memória (CUDA out of memory) |
+| `--workers 0` | se der erro de multiprocessing no Windows |
+| `--retomar` | continua um treino que foi interrompido |
 
-O código e os modelos da Ultralytics usam a licença AGPL-3.0, e o dataset Construction-PPE tem licença própria (veja em docs.ultralytics.com/datasets/detect/construction-ppe). Para uso comercial em software fechado, confira as condições de licença da Ultralytics.
+### Coletar fotos para o re-treino
+
+```bash
+python coletar_certo.py                    # colete de EPI de verdade  -> dados_colete_certo/
+python coletar_errado.py                   # colete de futebol (falso) -> dados_colete_errado/
+python coletar_errado.py --item capacete   # boné (falso capacete)     -> dados_bone/
+python coletar_certo.py --fonte obra.mp4   # qualquer um aceita um vídeo gravado
+```
+
+Webcam: espaço salva, `a` salva sozinho a cada 1 s. Cada foto já sai rotulada com os EPIs que o modelo achou. A diferença é o item escolhido (`--item`, padrão colete):
+
+- **`coletar_certo.py`**: o item é rotulado como EPI. Como ali só aparece EPI de verdade, detecções fracas (a partir de 0,15) também valem. Se o modelo não achar, `m` congela a imagem para desenhar as caixas com o mouse (`cv2.selectROIs`).
+- **`coletar_errado.py`**: o item é descartado dos rótulos, e o modelo aprende que aquilo não é EPI. Não deixe aparecer o EPI de verdade.
+
+A parte comum fica no `coleta.py`. A cada coleta, o `dados_treino.yaml` é refeito juntando o dataset original com **todas** as pastas de coleta, para um re-treino não fazer o modelo esquecer o que outra coleta ensinou. No fim do treino, o `treinar.py` mostra para cada coleta em quantas fotos o modelo ainda erra.
+
+## Licença
+
+O código e os modelos da Ultralytics usam a licença AGPL-3.0. O dataset de EPI é CC BY 4.0 (Roboflow, anderson-vlsev/epi-d4clr). Para uso comercial em software fechado, confira as condições de licença da Ultralytics.

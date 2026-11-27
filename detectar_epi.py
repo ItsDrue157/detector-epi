@@ -2,15 +2,18 @@
 Detector de EPI (capacete e colete) em tempo real com YOLO.
 
 Exemplos de uso:
-    python detectar_epi.py                          # webcam padrão (0)
+    python detectar_epi.py                          # webcam padrão (0), na CPU
+    python detectar_epi.py --gpu                    # placa NVIDIA RTX série 40 ou 50
     python detectar_epi.py --fonte 1                # segunda webcam
     python detectar_epi.py --fonte video.mp4        # arquivo de vídeo
     python detectar_epi.py --fonte foto.jpg         # imagem
     python detectar_epi.py --fonte rtsp://usuario:senha@ip:554/stream   # câmera IP
     python detectar_epi.py --exigir capacete        # cobra só capacete
     python detectar_epi.py --salvar saida.mp4       # grava o vídeo anotado
-    python detectar_epi.py --dispositivo amd        # GPU AMD (Windows ML / ONNX)
-    python detectar_epi.py --dispositivo cpu        # só processador
+    python detectar_epi.py --sem-som                # sem bipe nos alertas
+
+Ajustes finos (confiança, intervalo de alertas, resolução da câmera...) ficam
+nas constantes da seção "Configuração", logo abaixo dos imports.
 
 Teclas na janela:
     q ou ESC  -> sair
@@ -33,6 +36,28 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
+# --------------------------------------------------------------------------- #
+# Configuração
+# --------------------------------------------------------------------------- #
+MODELO_EPI = "modelos/epi.pt"
+CONF = 0.40                 # confiança mínima geral (0-1)
+CONF_CAPACETE = None        # confiança mínima só do capacete (ex.: 0.7 se boné virar capacete)
+CONF_COLETE = None          # confiança mínima só do colete (ex.: 0.6 se camisa colorida virar colete)
+IOU = 0.50                  # IoU do NMS
+LARGURA, ALTURA = 1280, 720  # resolução pedida à webcam
+PASTA_OCORRENCIAS = "ocorrencias"
+INTERVALO_ALERTA = 5.0      # segundos mínimos entre dois alertas salvos
+FRAMES_CONFIRMACAO = 8      # nº de frames seguidos com infração antes de alertar
+
+# Perfis de hardware.
+#   cpu: PC sem placa de vídeo (apresentação). Imagem 480 (mAP50 igual ao 640 no teste),
+#        detector de pessoa nano rodando a cada 3 frames (pessoas mudam pouco entre frames).
+#   gpu: NVIDIA RTX série 40 ou 50. Imagem 640, detector de pessoa "s" em todo frame.
+PERFIS = {
+    "cpu": {"dispositivo": "cpu", "imgsz": 480, "modelo_pessoa": "modelos/yolo26n.pt", "pessoa_a_cada": 3},
+    "gpu": {"dispositivo": "0", "imgsz": 640, "modelo_pessoa": "modelos/yolo26s.pt", "pessoa_a_cada": 1},
+}
 
 # --------------------------------------------------------------------------- #
 # Cores (BGR)
@@ -173,8 +198,8 @@ def texto_com_fundo(img, texto, org, cor_fundo, escala=0.55, cor_texto=BRANCO, e
     return th + base + 6
 
 
-def desenhar(frame, status, orfas, outras, exigir, mostrar_itens=True):
-    for d in outras if mostrar_itens else []:
+def desenhar(frame, status, orfas, outras, exigir):
+    for d in outras:
         cor = {"capacete": AZUL, "colete": AMARELO}.get(d.categoria, CINZA)
         x1, y1, x2, y2 = d.caixa.astype(int)
         cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 1)
@@ -206,9 +231,8 @@ def desenhar(frame, status, orfas, outras, exigir, mostrar_itens=True):
 
 def desenhar_painel(frame, fps, n_pessoas, n_infratores, exigir, alerta_ativo, pausado):
     h, w = frame.shape[:2]
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (w, 34), PRETO, -1)
-    cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
+    faixa = frame[:34]  # escurece só a faixa do topo, sem copiar o frame inteiro
+    cv2.addWeighted(faixa, 0.45, np.zeros_like(faixa), 0.55, 0, faixa)
     info = (f"FPS: {fps:4.1f}   Pessoas: {n_pessoas}   Sem EPI: {n_infratores}   "
             f"Exigindo: {' + '.join(sorted(exigir))}")
     cv2.putText(frame, info, (10, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.55, BRANCO, 1, cv2.LINE_AA)
@@ -269,53 +293,9 @@ class RegistroOcorrencias:
 # --------------------------------------------------------------------------- #
 # Detector
 # --------------------------------------------------------------------------- #
-def preparar_onnx(caminho_modelo, imgsz):
-    """Converte um .pt para ONNX (uma vez só) e devolve o caminho do .onnx.
-
-    O ONNX roda na GPU AMD pelo Windows ML (pacote onnxruntime-windowsml), sem precisar de CUDA.
-    """
-    if not caminho_modelo or Path(caminho_modelo).suffix.lower() != ".pt" or not Path(caminho_modelo).exists():
-        return caminho_modelo
-    pt = Path(caminho_modelo)
-    destino = pt.with_name(f"{pt.stem}_{imgsz}.onnx")
-    if not destino.exists():
-        from ultralytics import YOLO
-        print(f"Convertendo {pt} para ONNX (só na primeira vez)...")
-        gerado = Path(YOLO(str(pt)).export(format="onnx", imgsz=imgsz, device="cpu"))
-        gerado.replace(destino)
-    return str(destino)
-
-
-def ativar_directml():
-    """No Windows 10 (sem Windows ML) faz o ONNX usar a GPU pelo DirectML (pacote onnxruntime-directml).
-
-    O Ultralytics só pede a CPU nesse caso, então trocamos a lista de providers antes de criar a sessão.
-    """
-    if sys.platform != "win32" or sys.getwindowsversion().build >= 26100:
-        return  # Windows 11 24H2+ usa o Windows ML
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        return
-    if "DmlExecutionProvider" not in ort.get_available_providers():
-        print("Aviso: DirectML não encontrado. Instale com:  pip install -r requirements-amd-win10.txt")
-        return
-    sessao_original = ort.InferenceSession
-
-    def sessao_dml(modelo, sess_options=None, providers=None, *a, **kw):
-        if not providers or providers == ["CPUExecutionProvider"]:
-            providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
-            sess_options = sess_options or ort.SessionOptions()
-            sess_options.enable_mem_pattern = False  # exigências do DirectML
-            sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        return sessao_original(modelo, sess_options, providers, *a, **kw)
-
-    ort.InferenceSession = sessao_dml
-    print("GPU via DirectML (Windows 10).")
-
-
 class DetectorEPI:
-    def __init__(self, caminho_modelo, conf, iou, imgsz, dispositivo, modelo_pessoa=None, conf_categoria=None):
+    def __init__(self, caminho_modelo, conf, iou, imgsz, dispositivo, modelo_pessoa=None, conf_categoria=None,
+                 pessoa_a_cada=1):
         from ultralytics import YOLO  # import aqui para o --help funcionar sem ultralytics
 
         self.modelo = YOLO(caminho_modelo)
@@ -338,6 +318,9 @@ class DetectorEPI:
 
         # Se o modelo de EPI não detecta pessoas, usa um segundo modelo (ex.: COCO) só para isso.
         self.modelo_pessoa, self.classes_pessoa = None, []
+        # o detector de pessoa roda a cada N frames; nos outros reaproveita as últimas caixas
+        self.pessoa_a_cada = max(1, pessoa_a_cada)
+        self._n_frame, self._pessoas = 0, []
         if not self.tem_pessoa and modelo_pessoa and Path(modelo_pessoa).exists():
             m = YOLO(modelo_pessoa)
             self.classes_pessoa = [i for i, n in m.names.items() if categoria_da_classe(n) == "pessoa"]
@@ -351,7 +334,7 @@ class DetectorEPI:
                   " detecções explícitas de 'sem capacete'/'sem colete'.")
             if not any(c in ("sem_capacete", "sem_colete") for c in self.mapa.values()):
                 print("[AVISO] Este modelo também não tem classes 'sem capacete'/'sem colete':"
-                      " nenhuma infração será detectada. Use --modelo-pessoa.")
+                      " nenhuma infração será detectada. Confira modelos/yolo26n.pt e yolo26s.pt.")
         print()
 
     def detectar(self, frame) -> tuple[list[Deteccao], list[Deteccao]]:
@@ -370,20 +353,24 @@ class DetectorEPI:
             (uteis if cat else outras).append(d)
 
         if self.modelo_pessoa is not None:
-            rp = self.modelo_pessoa.predict(frame, conf=self.conf, iou=self.iou, imgsz=self.imgsz,
-                                            device=self.dispositivo, classes=self.classes_pessoa,
-                                            verbose=False)[0]
-            if rp.boxes is not None:
-                for c, cf in zip(rp.boxes.xyxy.cpu().numpy(), rp.boxes.conf.cpu().numpy()):
-                    uteis.append(Deteccao(caixa=c, conf=float(cf), categoria="pessoa", nome="person"))
+            if self._n_frame % self.pessoa_a_cada == 0:
+                rp = self.modelo_pessoa.predict(frame, conf=self.conf, iou=self.iou, imgsz=self.imgsz,
+                                                device=self.dispositivo, classes=self.classes_pessoa,
+                                                verbose=False)[0]
+                self._pessoas = []
+                if rp.boxes is not None:
+                    for c, cf in zip(rp.boxes.xyxy.cpu().numpy(), rp.boxes.conf.cpu().numpy()):
+                        self._pessoas.append(Deteccao(caixa=c, conf=float(cf), categoria="pessoa", nome="person"))
+            self._n_frame += 1
+            uteis.extend(self._pessoas)
         return uteis, outras
 
 
-def processar_frame(detector, frame, exigir, mostrar_itens):
+def processar_frame(detector, frame, exigir):
     uteis, outras = detector.detectar(frame)
     status, orfas = avaliar_pessoas(uteis)
     itens_positivos = [d for d in uteis if d.categoria in ("capacete", "colete")]
-    desenhar(frame, status, orfas, itens_positivos + outras, exigir, mostrar_itens)
+    desenhar(frame, status, orfas, itens_positivos + outras, exigir)
 
     infratores = [s for s in status if s.faltando(exigir)]
     sem_cap = sum("capacete" in s.faltando(exigir) for s in status)
@@ -399,18 +386,54 @@ def processar_frame(detector, frame, exigir, mostrar_itens):
 # --------------------------------------------------------------------------- #
 # Fontes de vídeo
 # --------------------------------------------------------------------------- #
-def abrir_captura(fonte: str, largura: int, altura: int):
+def abrir_captura(fonte: str, largura: int = LARGURA, altura: int = ALTURA):
     if fonte.isdigit():
         backend = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
         cap = cv2.VideoCapture(int(fonte), backend)
         if not cap.isOpened() and backend != cv2.CAP_ANY:
             cap = cv2.VideoCapture(int(fonte))
-        if largura and altura:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, largura)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, altura)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, largura)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, altura)
     else:
         cap = cv2.VideoCapture(fonte)
     return cap
+
+
+class CapturaAoVivo:
+    """Lê a câmera numa thread e guarda só o frame mais recente.
+
+    Sem isso, quando o processamento é mais lento que a câmera (CPU), os frames
+    se acumulam no buffer e a imagem na tela fica atrasada em relação à realidade.
+    """
+
+    def __init__(self, cap):
+        self.cap = cap
+        self.ok, self.frame = False, None
+        self.trava = threading.Lock()
+        self.novo = threading.Event()
+        self.rodando = True
+        self.thread = threading.Thread(target=self._ler, daemon=True)
+        self.thread.start()
+
+    def _ler(self):
+        while self.rodando:
+            ok, frame = self.cap.read()
+            with self.trava:
+                self.ok, self.frame = ok, frame
+            self.novo.set()
+            if not ok:
+                break
+
+    def read(self):
+        self.novo.wait(timeout=5)
+        self.novo.clear()
+        with self.trava:
+            return self.ok, self.frame
+
+    def release(self):
+        self.rodando = False
+        self.thread.join(timeout=1)
+        self.cap.release()
 
 
 def rodar_imagem(detector, caminho, args, exigir):
@@ -418,20 +441,19 @@ def rodar_imagem(detector, caminho, args, exigir):
     if frame is None:
         sys.exit(f"Não consegui abrir a imagem: {caminho}")
     t0 = time.time()
-    n_p, n_i, sc, scol = processar_frame(detector, frame, exigir, not args.ocultar_itens)
+    n_p, n_i, sc, scol = processar_frame(detector, frame, exigir)
     desenhar_painel(frame, 1 / max(time.time() - t0, 1e-6), n_p, n_i, exigir, n_i > 0, False)
     saida = args.salvar or str(Path(caminho).with_name(Path(caminho).stem + "_epi.jpg"))
     cv2.imwrite(saida, frame)
     print(f"Pessoas: {n_p} | sem capacete: {sc} | sem colete: {scol} | resultado salvo em {saida}")
-    if not args.sem_janela:
-        cv2.namedWindow("Deteccao de EPI", cv2.WINDOW_NORMAL)
-        cv2.imshow("Deteccao de EPI", frame)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    cv2.namedWindow("Deteccao de EPI", cv2.WINDOW_NORMAL)
+    cv2.imshow("Deteccao de EPI", frame)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
 def rodar_video(detector, args, exigir):
-    cap = abrir_captura(args.fonte, args.largura, args.altura)
+    cap = abrir_captura(args.fonte)
     if not cap.isOpened():
         sys.exit(f"Não consegui abrir a fonte '{args.fonte}'. Se for webcam, tente --fonte 1 "
                  "ou feche outros programas que estejam usando a câmera.")
@@ -444,14 +466,16 @@ def rodar_video(detector, args, exigir):
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         gravador = cv2.VideoWriter(args.salvar, cv2.VideoWriter_fourcc(*"mp4v"), fps_fonte, (w, h))
 
-    registro = RegistroOcorrencias(Path(args.pasta_ocorrencias), args.intervalo_alerta,
-                                   som=not args.sem_som)
+    # webcam e câmera IP: sempre o frame mais recente. Arquivo de vídeo: todos os frames, em ordem.
+    if args.fonte.isdigit() or args.fonte.lower().startswith(("rtsp://", "http://", "https://")):
+        cap = CapturaAoVivo(cap)
+
+    registro = RegistroOcorrencias(Path(PASTA_OCORRENCIAS), INTERVALO_ALERTA, som=not args.sem_som)
     janela = "Deteccao de EPI"
-    if not args.sem_janela:
-        cv2.namedWindow(janela, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(janela, cv2.WINDOW_NORMAL)
 
     fps, pausado, frames_infracao = 0.0, False, 0
-    ultimo_frame = None
+    ultimo_frame, t_anterior = None, None
     print("Rodando... (q/ESC sai, p pausa, s salva print)")
 
     while True:
@@ -461,14 +485,17 @@ def rodar_video(detector, args, exigir):
                 if args.fonte.isdigit():
                     print("Falha ao ler a webcam.")
                 break
-            t0 = time.time()
-            n_p, n_i, sc, scol = processar_frame(detector, frame, exigir, not args.ocultar_itens)
-            dt = time.time() - t0
-            fps = (1 / dt) if fps == 0 else 0.9 * fps + 0.1 * (1 / max(dt, 1e-6))
+            n_p, n_i, sc, scol = processar_frame(detector, frame, exigir)
+            # FPS real do loop (leitura + detecção + janela), não só da detecção
+            agora = time.time()
+            if t_anterior is not None:
+                dt = max(agora - t_anterior, 1e-6)
+                fps = (1 / dt) if fps == 0 else 0.9 * fps + 0.1 * (1 / dt)
+            t_anterior = agora
 
             # Só alerta se a infração persistir alguns frames (evita falso alarme por 1 frame ruim)
             frames_infracao = frames_infracao + 1 if n_i > 0 else 0
-            alerta = frames_infracao >= args.frames_confirmacao
+            alerta = frames_infracao >= FRAMES_CONFIRMACAO
             desenhar_painel(frame, fps, n_p, n_i, exigir, alerta, False)
             if alerta:
                 registro.registrar(frame, n_p, sc, scol)
@@ -479,14 +506,13 @@ def rodar_video(detector, args, exigir):
             frame = ultimo_frame.copy()
             desenhar_painel(frame, fps, 0, 0, exigir, False, True)
 
-        if args.sem_janela:
-            continue
         cv2.imshow(janela, frame)
         tecla = cv2.waitKey(1) & 0xFF
         if tecla in (ord("q"), 27):
             break
         if tecla == ord("p"):
             pausado = not pausado
+            t_anterior = None  # o tempo pausado não entra no FPS
         if tecla == ord("s") and ultimo_frame is not None:
             registro.registrar(ultimo_frame, 0, 0, 0, forcar=True)
         if cv2.getWindowProperty(janela, cv2.WND_PROP_VISIBLE) < 1:
@@ -500,51 +526,45 @@ def rodar_video(detector, args, exigir):
 
 
 # --------------------------------------------------------------------------- #
+def escolher_perfil(gpu: bool) -> dict:
+    """Perfil cpu por padrão; com --gpu, usa a NVIDIA se ela existir (feito para RTX série 40 ou 50)."""
+    if not gpu:
+        return PERFIS["cpu"]
+    import torch
+    if not torch.cuda.is_available():
+        print("[AVISO] --gpu pedido, mas nenhuma placa NVIDIA (CUDA) foi encontrada. Rodando na CPU.\n"
+              "        Confira se instalou com:  pip install -r requirements-gpu.txt")
+        return PERFIS["cpu"]
+    if torch.cuda.get_device_capability(0) < (8, 9):  # 8.9 = RTX série 40 (Ada)
+        print(f"[AVISO] {torch.cuda.get_device_name(0)} é anterior à RTX série 40, que é o mínimo testado.")
+    return PERFIS["gpu"]
+
+
 def main():
     ap = argparse.ArgumentParser(description="Detecção de EPI (capacete e colete) com YOLO")
-    ap.add_argument("--modelo", default="modelos/epi.pt", help="arquivo .pt do modelo de EPI")
-    ap.add_argument("--fonte", default="0", help="0/1/2 = webcam, ou caminho de vídeo/imagem, ou URL rtsp")
-    ap.add_argument("--modelo-pessoa", default="modelos/yolo26s.pt",
-                    help="modelo auxiliar (ex.: COCO) para detectar pessoas, usado só se o modelo"
-                         " de EPI não tiver classe 'pessoa'. 'nenhum' desativa")
-    ap.add_argument("--conf", type=float, default=0.40, help="confiança mínima (0-1)")
-    ap.add_argument("--conf-capacete", type=float, default=None,
-                    help="confiança mínima só para capacete (ex.: 0.7 se boné/chapéu vira capacete)")
-    ap.add_argument("--conf-colete", type=float, default=None,
-                    help="confiança mínima só para colete (ex.: 0.6 se camisa colorida vira colete)")
-    ap.add_argument("--iou", type=float, default=0.50, help="IoU do NMS")
-    ap.add_argument("--imgsz", type=int, default=640, help="tamanho de entrada do modelo")
-    ap.add_argument("--dispositivo", default=None, help="'cpu', '0' (GPU NVIDIA 0 ou AMD com ROCm), 'amd' (GPU AMD via"
-                         " Windows ML/ONNX), 'mps' (Mac). Padrão: automático")
+    ap.add_argument("--fonte", default="0",
+                    help="0/1/2 = webcam, caminho de vídeo ou foto, ou URL da câmera IP (rtsp://...)")
+    ap.add_argument("--gpu", action="store_true", help="usa a placa NVIDIA (RTX série 40 ou 50). Padrão: CPU")
     ap.add_argument("--exigir", nargs="+", default=["capacete", "colete"],
                     choices=["capacete", "colete"], help="quais EPIs são obrigatórios")
-    ap.add_argument("--largura", type=int, default=1280, help="largura pedida à webcam")
-    ap.add_argument("--altura", type=int, default=720, help="altura pedida à webcam")
-    ap.add_argument("--salvar", default=None, help="salva o vídeo/imagem anotado neste caminho")
-    ap.add_argument("--pasta-ocorrencias", default="ocorrencias", help="onde salvar fotos e o CSV de alertas")
-    ap.add_argument("--intervalo-alerta", type=float, default=5.0, help="segundos mínimos entre alertas")
-    ap.add_argument("--frames-confirmacao", type=int, default=8,
-                    help="nº de frames seguidos com infração antes de alertar")
-    ap.add_argument("--sem-som", action="store_true", help="desliga o bipe")
-    ap.add_argument("--sem-janela", action="store_true", help="não abre janela (servidor)")
-    ap.add_argument("--ocultar-itens", action="store_true", help="não desenha as caixas de capacete/colete")
+    ap.add_argument("--salvar", default=None, help="salva o vídeo/foto com as marcações neste caminho")
+    ap.add_argument("--sem-som", action="store_true", help="desliga o bipe dos alertas")
     args = ap.parse_args()
 
-    if not Path(args.modelo).exists() and not args.modelo.startswith(("http", "hf://")):
-        sys.exit(f"Modelo '{args.modelo}' não encontrado.\n"
-                 "Treine primeiro com:  python treinar.py\n"
-                 "ou aponte para outro modelo com --modelo caminho/do/modelo.pt")
+    if not Path(MODELO_EPI).exists():
+        sys.exit(f"Modelo '{MODELO_EPI}' não encontrado. Treine primeiro com:  python treinar.py")
 
-    modelo_pessoa = None if args.modelo_pessoa.lower() == "nenhum" else args.modelo_pessoa
-    dispositivo = args.dispositivo
-    if dispositivo and dispositivo.lower() in ("amd", "onnx", "winml"):
-        # O Windows ML escolhe sozinho a GPU (AMD, Intel ou NVIDIA) e cai para a CPU se não houver.
-        args.modelo = preparar_onnx(args.modelo, args.imgsz)
-        modelo_pessoa = preparar_onnx(modelo_pessoa, args.imgsz)
-        ativar_directml()
-        dispositivo = "cpu"
-    detector = DetectorEPI(args.modelo, args.conf, args.iou, args.imgsz, dispositivo, modelo_pessoa,
-                           {"capacete": args.conf_capacete, "colete": args.conf_colete})
+    perfil = escolher_perfil(args.gpu)
+    modelo_pessoa = perfil["modelo_pessoa"]
+    reserva = PERFIS["gpu"]["modelo_pessoa"]
+    if not Path(modelo_pessoa).exists() and Path(reserva).exists():
+        print(f"[AVISO] '{modelo_pessoa}' não encontrado, usando '{reserva}' para pessoas (mais lento).")
+        modelo_pessoa = reserva
+    print(f"Rodando na {'GPU' if perfil['dispositivo'] != 'cpu' else 'CPU'} · imagem {perfil['imgsz']} · "
+          f"pessoas: {modelo_pessoa} a cada {perfil['pessoa_a_cada']} frame(s)")
+
+    detector = DetectorEPI(MODELO_EPI, CONF, IOU, perfil["imgsz"], perfil["dispositivo"], modelo_pessoa,
+                           {"capacete": CONF_CAPACETE, "colete": CONF_COLETE}, perfil["pessoa_a_cada"])
     exigir = set(args.exigir)
 
     if Path(args.fonte).suffix.lower() in EXT_IMAGEM:

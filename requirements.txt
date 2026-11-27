@@ -1,3 +1,9 @@
+# Só CPU (PC da apresentação). Para GPU NVIDIA use o requirements-gpu.txt.
+# O PyTorch vem do índice de CPU: menor e sem as bibliotecas CUDA, que só gastariam RAM e disco.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+torch
+torchvision
 ultralytics>=8.4.0
 opencv-python>=4.8
 numpy
