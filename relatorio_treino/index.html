@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Re-treino do Detector de EPI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: relatório técnico em coluna única, faixa de destaque com o resultado principal, depois métricas, imagens e processo */
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --fg: #1c232b;
+  --muted: #5d6874;
+  --line: #dfe3e8;
+  --accent: #d98a00;       /* amarelo de sinalização, escurecido para ler no claro */
+  --accent-soft: #fff3d6;
+  --good: #2f8a4c;
+  --bad: #c2412d;
+  --bar-old: #b7c0ca;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161b; --surface: #1a2027; --fg: #e6eaee; --muted: #9aa5b1; --line: #2c343d;
+  --accent: #f2b233; --accent-soft: #2b2416; --good: #5cc27e; --bad: #f07a63; --bar-old: #4a5562;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161b; --surface: #1a2027; --fg: #e6eaee; --muted: #9aa5b1; --line: #2c343d;
+  --accent: #f2b233; --accent-soft: #2b2416; --good: #5cc27e; --bad: #f07a63; --bar-old: #4a5562;
+  color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 48px; }
+h1, h2 { font-family: var(--display); font-weight: 700; letter-spacing: .01em; text-wrap: balance; margin: 0; line-height: 1.05; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.2rem); }
+h2 { font-size: 1.7rem; }
+h3 { font-size: 1rem; margin: 0; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-family: var(--mono); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+section { display: grid; gap: 18px; min-width: 0; }
+
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: .9rem; }
+.meta b { color: var(--fg); font-weight: 500; }
+
+.hero { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 10px; padding: 26px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px; align-items: center; }
+.hero .big { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.hero .from { font-family: var(--display); font-size: 3rem; color: var(--bad); text-decoration: line-through; text-decoration-thickness: 3px; }
+.hero .to { font-family: var(--display); font-size: 4.6rem; color: var(--good); line-height: 1; }
+.hero .unit { color: var(--muted); }
+.dots { display: grid; grid-template-columns: repeat(47, 1fr); gap: 3px; }
+.dots i { aspect-ratio: 1; border-radius: 50%; background: var(--bar-old); display: block; }
+.dots i.err { background: var(--bad); }
+.dots.after i { background: var(--good); }
+.dotrow { display: grid; gap: 6px; }
+.dotrow span { font-size: .8rem; color: var(--muted); }
+
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.metric { display: grid; grid-template-columns: 92px 1fr 118px; gap: 10px; align-items: center; font-size: .9rem; }
+.bars { display: grid; gap: 3px; }
+.bar { height: 9px; border-radius: 2px; background: var(--bar-old); }
+.bar.new { background: var(--accent); }
+.vals { text-align: right; white-space: nowrap; }
+.up { color: var(--good); } .down { color: var(--bad); } .flat { color: var(--muted); }
+.legend { display: flex; gap: 16px; font-size: .8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+.tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; min-width: 560px; }
+th, td { padding: 10px 14px; text-align: right; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 500; color: var(--muted); font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+tr:last-child td { border-bottom: 0; }
+tr.off td { color: var(--muted); }
+.tag { font-family: var(--mono); font-size: .7rem; padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--fg); margin-left: 6px; }
+
+figure { margin: 0; display: grid; gap: 8px; }
+figure img { border-radius: 8px; border: 1px solid var(--line); width: 100%; height: auto; display: block; background: #fff; }
+figcaption { font-size: .88rem; color: var(--muted); }
+.gallery { display: grid; gap: 22px; }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+.steps { display: grid; gap: 0; border-left: 2px solid var(--line); margin-left: 6px; }
+.step { padding: 0 0 18px 20px; position: relative; display: grid; gap: 4px; }
+.step::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.step:last-child { padding-bottom: 0; }
+.note { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; display: grid; gap: 8px; }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 70ch; }
+
+@media (max-width: 720px) {
+  .hero, .cards, .two { grid-template-columns: 1fr; }
+  .metric { grid-template-columns: 78px 1fr 104px; }
+  .hero .to { font-size: 3.6rem; }
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Detector de EPI · relatório de treino</span>
+  <h1>Re-treino do Detector de EPI</h1>
+  <p>O modelo foi treinado de novo com o dataset original e fotos de pessoas de boné, para parar de aceitar boné como capacete. Este relatório compara o modelo antigo (<span class="num">epi_backup.pt</span>) com o novo (<span class="num">epi.pt</span>) nas mesmas imagens de validação.</p>
+  <div class="meta">
+    <span>Data <b>26/11/2026</b></span>
+    <span>GPU <b>RTX 5060</b></span>
+    <span>Duração <b>17 min</b></span>
+    <span>Épocas <b>39 de 50</b> (melhor na 14)</span>
+  </div>
+</header>
+
+<section class="hero" aria-label="Resultado principal">
+  <div style="display:grid;gap:10px">
+    <span class="eyebrow">Boné confundido com capacete</span>
+    <div class="big"><span class="from num">14</span><span class="to num">0</span><span class="unit">de 47 fotos de boné</span></div>
+    <p>Nas fotos de boné separadas para validação (que o modelo não viu no treino), o modelo antigo marcava capacete em 30% delas. O novo não marca em nenhuma.</p>
+  </div>
+  <div style="display:grid;gap:14px">
+    <div class="dotrow"><span>Antes · 14 erros</span><div class="dots" id="dots-antes"></div></div>
+    <div class="dotrow"><span>Depois · 0 erros</span><div class="dots after" id="dots-depois"></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Capacete e colete</h2>
+  <p>São as duas classes que o detector usa. A precisão do capacete subiu bastante, o que significa menos alarmes falsos. Era exatamente o problema do boné.</p>
+  <div class="legend"><span><i style="background:var(--bar-old)"></i>Antes</span><span><i style="background:var(--accent)"></i>Depois</span></div>
+  <div class="cards" id="cards"></div>
+</section>
+
+<section>
+  <h2>Antes e depois nas imagens</h2>
+  <p>Mesmas fotos, mesmo programa (<span class="num">detectar_epi.py</span>), só trocando o modelo. Caixa vermelha: falta EPI. Rótulo verde: EPI encontrado.</p>
+  <div class="gallery">
+    <figure><img src="img/bone_1.jpg" alt="Pessoa de boné azul: antes aparecia CAPACETE OK, depois SEM CAPACETE"><figcaption>Boné azul. Antes o modelo via um capacete com 74% de confiança e liberava a pessoa. Depois marca corretamente "SEM CAPACETE".</figcaption></figure>
+    <div class="two">
+      <figure><img src="img/bone_2.jpg" alt="Segunda foto de boné, antes e depois"><figcaption>Outra foto de boné: o falso capacete some.</figcaption></figure>
+      <figure><img src="img/bone_3.jpg" alt="Terceira foto de boné, antes e depois"><figcaption>Terceira foto de boné, mesmo resultado.</figcaption></figure>
+    </div>
+    <div class="two">
+      <figure><img src="img/capacete_1.jpg" alt="Trabalhadores em área industrial com capacete branco, detectado antes e depois"><figcaption>Capacete de verdade continua sendo reconhecido (0.85 antes, 0.82 depois).</figcaption></figure>
+      <figure><img src="img/capacete_2.jpg" alt="Outra foto com capacete, detectado antes e depois"><figcaption>A confiança no capacete subiu (0.68 → 0.81). Nas duas versões aparece "SEM CAPACETE" porque a caixa da pessoa começa abaixo do capacete, e ele fica fora da região da cabeça. Isso vem da regra de posição do detector, não do modelo.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Métricas gerais</h2>
+  <p>Médias das 5 classes do modelo, incluindo as que o detector não usa. Ficaram praticamente estáveis.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Métrica</th><th>Antes</th><th>Depois</th><th>Diferença</th></tr></thead>
+    <tbody id="geral"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Todas as classes</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Classe</th><th>Objetos</th><th>Precisão</th><th>Recall</th><th>mAP50</th><th>mAP50-95</th><th>Δ mAP50-95</th></tr></thead>
+    <tbody id="classes"></tbody>
+  </table></div>
+  <p style="color:var(--muted);font-size:.88rem">Balaclava, C_eletrica e Operacional ficam desligadas no detector e não aparecem na tela.</p>
+</section>
+
+<section>
+  <h2>O que foi feito</h2>
+  <div class="steps">
+    <div class="step"><h3>Coleta das fotos de boné</h3><p>Com o <span class="num">coletar_bones.py</span>: 239 fotos de pessoas de boné, sem rótulo de capacete. 192 foram para o treino e 47 ficaram separadas para validação.</p></div>
+    <div class="step"><h3>Junção com o dataset original</h3><p>O treino usou as 1272 imagens do dataset epi-d4clr (Roboflow) mais as 192 de boné: 1464 imagens. Validação com 276 + 47 = 323 imagens.</p></div>
+    <div class="step"><h3>Treino a partir do modelo atual</h3><p>Começou dos pesos do modelo antigo, em vez do zero. Pedidas 50 épocas; o treino parou sozinho na 39 porque passou 25 épocas sem melhorar. O melhor resultado foi o da época 14.</p></div>
+    <div class="step"><h3>Troca do modelo</h3><p>O novo virou <span class="num">modelos/epi.pt</span>. O antigo continua em <span class="num">modelos/epi_backup.pt</span> para voltar se precisar.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Gráficos do treino</h2>
+  <div class="two">
+    <figure><img src="img/resultados.jpg" alt="Curvas de loss e métricas por época"><figcaption>Loss e métricas por época. A loss de treino cai o tempo todo; as métricas de validação estabilizam cedo.</figcaption></figure>
+    <figure><img src="img/confusao.jpg" alt="Matriz de confusão normalizada"><figcaption>Matriz de confusão: o que o modelo confunde com o quê. A coluna "background" mostra detecções que não existiam.</figcaption></figure>
+  </div>
+</section>
+
+<section class="note">
+  <h2>Pontos de atenção</h2>
+  <ul>
+    <li>O <b>colete</b> perdeu um pouco de mAP50-95 (0.875 → 0.826): as caixas ficaram menos justas. A precisão e o recall dele quase não mudaram, então na prática ele continua sendo encontrado.</li>
+    <li>O <b>recall do capacete</b> caiu de 1.000 para 0.982: de cada 100 capacetes reais, cerca de 2 deixam de ser vistos numa foto isolada. No vídeo isso pesa menos, porque o alerta só dispara depois de vários frames seguidos.</li>
+    <li>Quando a pessoa é detectada cortada (caixa começando no rosto), o capacete pode ficar fora da região da cabeça e o detector marca "SEM CAPACETE" mesmo com o capacete encontrado. Aparece na segunda foto de capacete acima.</li>
+    <li>As 47 fotos de boné de validação foram coletadas do mesmo jeito que as do treino, com poucas pessoas e bonés. Vale testar ao vivo com outros bonés e outras pessoas antes da apresentação.</li>
+  </ul>
+</section>
+
+</div>
+
+<script>
+const dots = (id, err) => { const el = document.getElementById(id);
+  el.innerHTML = Array.from({length: 47}, (_, i) => `<i class="${i < err ? 'err' : ''}"></i>`).join(''); };
+dots('dots-antes', 14); dots('dots-depois', 0);
+
+const fmtD = d => { const c = Math.abs(d) < 0.005 ? 'flat' : d > 0 ? 'up' : 'down';
+  return `<span class="${c}">${d >= 0 ? '+' : ''}${d.toFixed(3)}</span>`; };
+
+const usadas = {
+  Capacete: { P: [0.830, 0.939], R: [1.000, 0.982], mAP50: [0.979, 0.967], 'mAP50-95': [0.686, 0.687] },
+  colete:   { P: [0.944, 0.928], R: [0.988, 0.988], mAP50: [0.978, 0.966], 'mAP50-95': [0.875, 0.826] },
+};
+const rot = { P: 'Precisão', R: 'Recall', mAP50: 'mAP50', 'mAP50-95': 'mAP50-95' };
+document.getElementById('cards').innerHTML = Object.entries(usadas).map(([nome, m]) => `
+  <div class="card"><h3>${nome}</h3>
+  ${Object.entries(m).map(([k, [a, d]]) => `
+    <div class="metric"><span>${rot[k]}</span>
+      <div class="bars"><div class="bar" style="width:${a * 100}%"></div><div class="bar new" style="width:${d * 100}%"></div></div>
+      <span class="vals num">${d.toFixed(3)} ${fmtD(d - a)}</span></div>`).join('')}
+  </div>`).join('');
+
+const geral = [['Precisão', 0.871, 0.893], ['Recall', 0.878, 0.861], ['mAP50', 0.927, 0.934], ['mAP50-95', 0.669, 0.655]];
+document.getElementById('geral').innerHTML = geral.map(([n, a, d]) =>
+  `<tr><td>${n}</td><td class="num">${a.toFixed(3)}</td><td class="num">${d.toFixed(3)}</td><td class="num">${fmtD(d - a)}</td></tr>`).join('');
+
+const classes = [
+  ['Balaclava', 122, 0.972, 0.863, 0.963, 0.612, -0.023, false],
+  ['C_eletrica', 120, 0.770, 0.958, 0.963, 0.743, -0.010, false],
+  ['Capacete', 222, 0.939, 0.982, 0.967, 0.687, 0.001, true],
+  ['Operacional', 64, 0.855, 0.516, 0.809, 0.409, 0.014, false],
+  ['colete', 81, 0.928, 0.988, 0.966, 0.826, -0.048, true],
+];
+document.getElementById('classes').innerHTML = classes.map(([n, o, p, r, m50, m, d, u]) =>
+  `<tr class="${u ? '' : 'off'}"><td>${n}${u ? '<span class="tag">usada</span>' : ''}</td><td class="num">${o}</td><td class="num">${p.toFixed(3)}</td><td class="num">${r.toFixed(3)}</td><td class="num">${m50.toFixed(3)}</td><td class="num">${m.toFixed(3)}</td><td class="num">${fmtD(d)}</td></tr>`).join('');
+</script>

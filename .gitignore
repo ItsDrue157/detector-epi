@@ -19,3 +19,6 @@ modelos/*.onnx
 
 # cache de rótulos gerado pelo YOLO
 *.cache
+
+# backups automáticos do treinar.py (o modelo antigo fica em modelos/epi_backup.pt)
+modelos/epi_anterior_*.pt
