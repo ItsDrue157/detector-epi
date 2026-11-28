@@ -14,6 +14,7 @@ Exemplos:
 
 Teclas:
     espaço = salvar foto | a = liga/desliga salvar automático | q/ESC = sair
+    c      = aceitar a sugestão amarela ("talvez colete": detecção fraca, 0.02 a 0.15)
     m      = marcar à mão: arraste uma caixa sobre cada colete, ENTER confirma cada caixa,
              ESC termina e salva (ESC sem nenhuma caixa cancela)
 
@@ -33,6 +34,7 @@ from detectar_epi import AMARELO, VERDE, VERMELHO, abrir_captura, categoria_da_c
 
 PASTA = Path("dados_colete")
 CONF_COLETE = 0.15  # aqui todo colete na imagem é de verdade, então detecção fraca também vale
+CONF_SUGESTAO = 0.02  # abaixo de CONF_COLETE: mostra em amarelo e só salva se você apertar "c"
 CONF_OUTROS = 0.40  # confiança mínima dos rótulos dos outros EPIs (capacete etc.)
 
 
@@ -94,12 +96,16 @@ def main():
             break
         n_frame += 1
         h, w = frame.shape[:2]
-        r = modelo.predict(frame, conf=CONF_COLETE, verbose=False)[0]
-        rotulos_outros, rotulos, tela = [], [], frame.copy()
+        r = modelo.predict(frame, conf=CONF_SUGESTAO, verbose=False)[0]
+        rotulos_outros, rotulos, sugestoes, tela = [], [], [], frame.copy()
         for caixa, cl, cf in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.cls.cpu().numpy().astype(int),
                                  r.boxes.conf.cpu().numpy()):
             p1, p2 = tuple(caixa[:2].astype(int)), tuple(caixa[2:].astype(int))
-            if cl in cls_colete:
+            if cl in cls_colete and cf < CONF_COLETE:
+                sugestoes.append(linha_yolo(caixa, cl, w, h))
+                cv2.rectangle(tela, p1, p2, AMARELO, 2)
+                texto_com_fundo(tela, f"talvez colete {cf:.2f} (C aceita)", p1, AMARELO, escala=0.5)
+            elif cl in cls_colete:
                 rotulos.append(linha_yolo(caixa, cl, w, h))
                 cv2.rectangle(tela, p1, p2, VERDE, 3)
                 texto_com_fundo(tela, f"colete CERTO {cf:.2f}", p1, VERDE, escala=0.5)
@@ -109,7 +115,10 @@ def main():
                 texto_com_fundo(tela, f"{modelo.names[cl]} (rotulo)", p1, VERDE, escala=0.4)
         achou = len(rotulos) > 0
         rotulos += rotulos_outros
-        if not achou:
+        if not achou and sugestoes:
+            texto_com_fundo(tela, "caixa amarela certa? C aceita e salva | errada? M marca a mao",
+                            (10, h - 15), AMARELO, escala=0.6)
+        elif not achou:
             texto_com_fundo(tela, "colete nao encontrado: aperte M para marcar a mao",
                             (10, h - 15), VERMELHO, escala=0.6)
 
@@ -122,6 +131,11 @@ def main():
             auto = not auto
         if tecla == ord(" "):
             quer_salvar = True
+        if tecla == ord("c") and sugestoes:
+            salvar(frame, sugestoes + rotulos)
+            print(f"  {len(sugestoes)} sugestão(ões) de colete aceita(s)")
+            cv2.rectangle(tela, (0, 0), (w - 1, h - 1), AMARELO, 8)
+            quer_salvar = False
         if tecla == ord("m"):
             marcar = frame.copy()
             texto_com_fundo(marcar, "arraste sobre cada colete, ENTER confirma, ESC termina",
@@ -139,7 +153,7 @@ def main():
             cv2.rectangle(tela, (0, 0), (w - 1, h - 1), VERDE, 8)
 
         texto_com_fundo(tela, f"fotos: {salvas} | automatico: {'SIM' if auto else 'nao'} | "
-                              "espaco=salvar a=auto m=marcar q=sair", (10, 30), AMARELO, escala=0.6)
+                              "espaco=salvar a=auto c=aceitar m=marcar q=sair", (10, 30), AMARELO, escala=0.6)
         cv2.imshow(janela, tela)
 
     cap.release()
