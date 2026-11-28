@@ -2,10 +2,8 @@
 train:
   - teste/train/images
   - dados_bone/images/train
-  - dados_colete/images/train
 val:
   - teste/valid/images
   - dados_bone/images/val
-  - dados_colete/images/val
 nc: 5
 names: ['Balaclava', 'C_eletrica', 'Capacete', 'Operacional', 'colete']
