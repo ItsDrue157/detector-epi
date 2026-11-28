@@ -94,26 +94,48 @@ Faça o treino **no PC com a RTX**. Na CPU ele leva horas.
 | `epi_backup.pt` | o modelo anterior. A cada treino, o `epi.pt` antigo vira o novo backup |
 | `yolo26n.pt`, `yolo26s.pt` | detectores de pessoa (não apagar) |
 
-**Passo 1: coletar fotos de colete de EPI**
+**Passo 1: coletar fotos do colete padrão**
+
+O `coleta.py` faz a coleta em etapas. Tudo roda na CPU; só o `rotular` aceita `--gpu` (RTX série 40 ou 50), para ir mais rápido.
 
 ```bash
-python coletar_colete.py                    # webcam
-python coletar_colete.py --fonte video.mp4  # ou um vídeo gravado
+python coleta.py gravar      # 1. grava vídeos curtos por cenário
+python coleta.py extrair     # 2. tira fotos dos vídeos
+python coleta.py rotular     # 3. o modelo sugere as caixas   (ou: rotular --gpu)
+python coleta.py revisar     # 4. você confere foto por foto
+python coleta.py montar      # 5. gera dados_colete/ e o dados_treino.yaml
+python coleta.py status      # em que pé está cada etapa
 ```
 
-As fotos vão para `dados_colete/`.
+**1. Gravar.** Teclas `1` a `8` escolhem o cenário, `espaço` começa e para, `q` sai.
+- Grave vídeos de 20 a 40 s, com a pessoa se mexendo. Vários vídeos curtos valem mais que um longo.
+- Grave **pelo menos 2 vídeos por cenário** (o cenário fica verde na tela). Um deles vai para a validação; com um vídeo só, o cenário fica só no treino.
+- Cenários: `frente`, `costas`, `lado`, `aberto`, `longe`, `bracos`, `pouca_luz` e `sem_colete`.
+- `sem_colete` é a mesma pessoa **sem colete**, com objetos verde-limão no fundo se tiver. Ensina o modelo a não ver colete onde não tem.
+- Se der, troque de pessoa, de roupa por baixo e de lugar entre os vídeos.
 
-- Coloque alguém **com o colete padrão** (verde-limão com faixas refletivas) na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
-- Aperte `a` para salvar uma foto por segundo automaticamente (ou `espaço` para salvar uma por vez). `q` sai.
-- Em **verde grosso** aparece o colete que vai ser rotulado. Como ali só tem o colete padrão, ele aceita até detecções bem fracas (a partir de 0.02).
-- **Costas:** o modelo confunde o colete com a jaqueta de eletricista (`C_eletrica`) ou o uniforme `Operacional`. Na coleta essas caixas viram colete, para o treino corrigir o erro.
-- **Colete aberto:** o modelo acha cada metade separada. Na coleta as metades viram uma caixa só, cobrindo o colete inteiro.
-- Se a caixa verde estiver **errada ou folgada** (pegando braço, perna ou fundo), aperte `m` e desenhe a caixa justa no colete, do ombro até a barra.
-- Se aparecer **"colete não encontrado: aperte M"**, aperte `m`: a imagem congela. Arraste uma caixa sobre cada colete, aperte `ENTER` a cada caixa e `ESC` para salvar. Essas fotos são as que mais ensinam o modelo.
-- No automático, ele só salva as fotos em que achou o colete. As outras, marque com `m`.
-- Junte **de 150 a 300 fotos**, com coletes e pessoas diferentes, se der.
+**2. Extrair.** Tira 2 fotos por segundo de cada vídeo novo e descarta as borradas e as repetidas (pessoa parada). No máximo 60 por vídeo.
 
-> ⚠️ **Só o colete padrão.** Deixe outros objetos verde-limão fora da imagem.
+**3. Rotular.** O `modelos/epi.pt` sugere as caixas:
+- Aceita colete a partir de 0.02, porque o modelo atual acha o colete padrão com só 0.03 a 0.10.
+- **Costas:** quando o modelo diz `C_eletrica` ou `Operacional` (uniformes parecidos), a caixa vira colete.
+- **Aberto:** as duas metades viram uma caixa só.
+- No cenário `sem_colete`, nunca sugere colete.
+
+**4. Revisar.** Uma janela mostra cada foto com as caixas sugeridas:
+- **Verde** = sugestão confiante. **Amarela** = confira com atenção (confiança baixa ou veio de `C_eletrica`).
+- `ENTER`/`espaço` aceita, `r` redesenha os coletes (arraste uma caixa por colete, `ENTER` a cada uma, `ESC` termina), `x` tira as caixas de colete, `d` descarta a foto, `b`/`←` volta, `n`/`→` pula, `q` sai.
+- **Caixa boa = justa no colete**, do ombro até a barra, sem pegar braço nem fundo.
+- Pode parar quando quiser: na próxima vez ele continua de onde parou.
+- `revisar --so-duvidosas` mostra só as amarelas e as sem colete achado. `revisar --cenario costas` mostra um cenário só. `revisar --tudo` revê as já revisadas.
+
+**5. Montar.** Gera o `dados_colete/` só com as fotos aceitas. Treino e validação são separados **por vídeo**, nunca por foto: assim a validação não tem fotos quase iguais às de treino e a métrica é honesta.
+
+**Ciclo que dá menos trabalho:** grave tudo, revise uns 100 a 150 frames, monte e treine. O treino troca o `modelos/epi.pt` pelo novo, que sugere caixas bem melhores. Aí rode `python coleta.py rotular --refazer` (refaz só as fotos ainda não revisadas) e continue revisando, agora quase só apertando `ENTER`.
+
+> ⚠️ **Só o colete padrão.** Nos outros cenários, deixe outros objetos verde-limão fora da imagem.
+
+Os vídeos e as fotos brutas ficam em `coleta_colete/`, fora do git (são grandes). O `dados_colete/` gerado entra no git.
 
 **Passo 2: treinar, partindo do modelo atual**
 
@@ -121,9 +143,9 @@ As fotos vão para `dados_colete/`.
 python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
 ```
 
-- O `dados_treino.yaml` é atualizado sozinho pelo `coletar_colete.py` e junta o dataset original, as fotos de boné e as de colete. Assim o modelo aprende o colete sem esquecer o boné.
+- O `dados_treino.yaml` é atualizado pelo `python coleta.py montar` e junta o dataset original, as fotos de boné e as de colete. Assim o modelo aprende o colete sem esquecer o boné.
 - Leva uns 20 a 40 minutos na RTX.
-- No final aparece, para cada coleta, em quantas fotos o modelo ainda erra, antes e depois do treino: colete de futebol marcado como colete, e colete de EPI não encontrado.
+- No final aparece, para cada coleta, em quantas fotos o modelo ainda erra, antes e depois do treino: boné virando capacete, colete padrão não encontrado e colete visto em quem está sem (fotos `sem_colete`).
 - O novo modelo vira o `modelos/epi.pt` e o anterior vira o `modelos/epi_backup.pt`.
 
 **Passo 3: testar e levar para o PC da apresentação**

@@ -8,7 +8,7 @@ Detecta em tempo real, pela webcam (ou vídeo, foto, câmera IP), se cada pessoa
 detector_epi/
 ├── detectar_epi.py        # detecção em tempo real (webcam/vídeo/foto/câmera IP)
 ├── treinar.py             # treina/re-treina o modelo (na GPU NVIDIA)
-├── coletar_colete.py      # coleta fotos de colete de EPI, já rotuladas
+├── coleta.py              # coleta do colete padrão em etapas (gravar, extrair, rotular, revisar, montar)
 ├── dados_treino.yaml      # dataset de treino: original + todas as coletas (gerado)
 ├── requirements.txt       # instalação só CPU
 ├── requirements-gpu.txt   # instalação com GPU NVIDIA (RTX série 40 ou 50)
@@ -124,16 +124,23 @@ python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epoca
 | `--workers 0` | se der erro de multiprocessing no Windows |
 | `--retomar` | continua um treino que foi interrompido |
 
-### Coletar fotos de colete de EPI
+### Coletar fotos do colete padrão
 
 ```bash
-python coletar_colete.py                    # webcam -> dados_colete/
-python coletar_colete.py --fonte obra.mp4   # ou um vídeo gravado
+python coleta.py gravar     # vídeos curtos por cenário -> coleta_colete/videos/
+python coleta.py extrair    # 2 fotos/s, sem borradas nem repetidas
+python coleta.py rotular    # o epi.pt sugere as caixas (CPU; --gpu numa RTX 40/50)
+python coleta.py revisar    # aceitar, redesenhar ou descartar cada foto
+python coleta.py montar     # dados_colete/ (só fotos aceitas) + dados_treino.yaml
 ```
 
-Webcam: espaço salva, `a` salva sozinho a cada 1 s. Cada foto já sai rotulada com os EPIs que o modelo achou. Como ali só aparece colete de verdade, detecções fracas de colete (a partir de 0,15) também valem. Se o modelo não achar, `m` congela a imagem para desenhar as caixas com o mouse (`cv2.selectROIs`).
+Por que em etapas: o modelo atual acha o colete padrão (verde-limão com faixas refletivas) com só 0,03 a 0,10 de confiança, confunde as costas dele com `C_eletrica` e acha as metades do colete aberto separadas. Rotular ao vivo com ele levaria esses erros para o treino. Por isso o modelo só **sugere** as caixas, e nenhuma foto entra no dataset sem revisão.
 
-A cada coleta, o `dados_treino.yaml` é refeito juntando o dataset original, as fotos de boné (`dados_bone/`) e as de colete (`dados_colete/`). No fim do treino, o `treinar.py` mostra quantas fotos de boné ainda viram capacete e quantos coletes ainda não são encontrados.
+- **Split por vídeo:** cada vídeo vai inteiro para treino ou para validação (~20% dos vídeos de cada cenário, sorteio com semente fixa). Separar foto a foto colocaria fotos quase iguais dos dois lados e inflaria a métrica.
+- **Exemplos negativos:** o cenário `sem_colete` entra sem caixa de colete.
+- **No fim do treino**, o `treinar.py` mostra quantas fotos de boné ainda viram capacete, quantas fotos do colete padrão ficam sem colete e quantas `sem_colete` ganham um colete que não existe.
+
+O passo a passo completo está no `COMO_USAR.md`.
 
 ## Licença
 

@@ -13,3 +13,6 @@ runs/
 
 # cache de rótulos gerado pelo YOLO
 *.cache
+
+# trabalho bruto da coleta (vídeos e fotos grandes)
+coleta_colete/

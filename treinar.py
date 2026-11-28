@@ -13,7 +13,7 @@ Exemplos:
     python treinar.py --retomar                        # continua um treino interrompido
     python treinar.py --log-completo                   # mostra também o log original do YOLO
 
-    # re-treino partindo do modelo atual, com as fotos de boné e do coletar_colete.py:
+    # re-treino partindo do modelo atual, com as fotos de boné e do colete padrão (coleta.py):
     python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epocas 50
 
 No fim:
@@ -227,10 +227,12 @@ def validar(caminho, dados, imgsz, dispositivo, pasta):
     return modelo.names, geral, por_classe
 
 
-def contar_deteccoes(caminho, pasta_imgs, item, dispositivo, conf=0.40):
-    """Em quantas fotos de uma coleta o modelo acha o item (capacete, colete). Devolve (com_item, total)."""
+def contar_deteccoes(caminho, pasta_imgs, item, dispositivo, conf=0.40, filtro=None):
+    """Em quantas fotos de uma coleta o modelo acha o item (capacete, colete). Devolve (com_item, total).
+    filtro(nome_do_arquivo) escolhe quais fotos entram (ex.: só as sem colete)."""
     from ultralytics import YOLO
-    imgs = sorted(p for p in Path(pasta_imgs).iterdir() if p.suffix.lower() in EXT_IMAGEM)
+    imgs = sorted(p for p in Path(pasta_imgs).iterdir() if p.suffix.lower() in EXT_IMAGEM
+                  and (filtro is None or filtro(p.name)))
     if not imgs:
         return None
     modelo = YOLO(str(caminho))
@@ -244,10 +246,10 @@ def contar_deteccoes(caminho, pasta_imgs, item, dispositivo, conf=0.40):
     return com_item, len(imgs)
 
 
-def contar_erros(caminho, pasta_imgs, item, modo, dispositivo):
+def contar_erros(caminho, pasta_imgs, item, modo, dispositivo, filtro=None):
     """Fotos em que o modelo erra: na coleta "errado", as que ainda viram EPI;
     na coleta "certo", as em que o EPI de verdade não é encontrado."""
-    r = contar_deteccoes(caminho, pasta_imgs, item, dispositivo)
+    r = contar_deteccoes(caminho, pasta_imgs, item, dispositivo, filtro=filtro)
     if not r:
         return None
     com_item, total = r
@@ -428,21 +430,30 @@ def main():
         except Exception as e:
             print(fraco(f"  (não deu para validar o modelo base: {e})"))
 
-    # fotos coletadas (boné e colete de EPI): em quantas o modelo ainda erra
+    # fotos coletadas (boné e colete padrão): em quantas o modelo ainda erra.
+    # No dados_colete, as fotos "sem_colete__*" (do coleta.py) são exemplos negativos.
+    def sem_colete(nome):
+        return nome.startswith("sem_colete__")
+
+    def com_colete(nome):
+        return not sem_colete(nome)
+
     confusoes = []
-    for pasta, item, modo, titulo_c, erro in (
-            ("dados_bone", "capacete", "errado", "Boné confundido com capacete", "marcadas como capacete"),
-            ("dados_colete", "colete", "certo", "Colete de EPI não encontrado", "sem colete detectado")):
+    for pasta, item, modo, titulo_c, erro, filtro in (
+            ("dados_bone", "capacete", "errado", "Boné confundido com capacete", "marcadas como capacete", None),
+            ("dados_colete", "colete", "certo", "Colete padrão não encontrado", "sem colete detectado", com_colete),
+            ("dados_colete", "colete", "errado", "Colete visto em quem está sem", "marcadas com colete",
+             sem_colete)):
         pasta_val = Path(pasta) / "images" / "val"
         if not pasta_val.is_dir():
             continue
         print(fraco(f"  testando fotos de {pasta}..."))
-        depois = contar_erros(melhor, pasta_val, item, modo, dispositivo)
+        depois = contar_erros(melhor, pasta_val, item, modo, dispositivo, filtro)
         if not depois:
             continue
         c = {"titulo": titulo_c, "erro": erro, "depois": depois}
         if geral_antes is not None:
-            c["antes"] = contar_erros(base, pasta_val, item, modo, dispositivo)
+            c["antes"] = contar_erros(base, pasta_val, item, modo, dispositivo, filtro)
         confusoes.append(c)
 
     # ----- copia o modelo para modelos/epi.pt ------------------------------- #
