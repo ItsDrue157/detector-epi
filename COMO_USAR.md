@@ -106,6 +106,8 @@ As fotos vão para `dados_colete/`.
 - Coloque alguém **com o colete padrão** (verde-limão com faixas refletivas) na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
 - Aperte `a` para salvar uma foto por segundo automaticamente (ou `espaço` para salvar uma por vez). `q` sai.
 - Em **verde grosso** aparece o colete que vai ser rotulado. Como ali só tem o colete padrão, ele aceita até detecções bem fracas (a partir de 0.02).
+- **Costas:** o modelo confunde o colete com a jaqueta de eletricista (`C_eletrica`) ou o uniforme `Operacional`. Na coleta essas caixas viram colete, para o treino corrigir o erro.
+- **Colete aberto:** o modelo acha cada metade separada. Na coleta as metades viram uma caixa só, cobrindo o colete inteiro.
 - Se a caixa verde estiver **errada ou folgada** (pegando braço, perna ou fundo), aperte `m` e desenhe a caixa justa no colete, do ombro até a barra.
 - Se aparecer **"colete não encontrado: aperte M"**, aperte `m`: a imagem congela. Arraste uma caixa sobre cada colete, aperte `ENTER` a cada caixa e `ESC` para salvar. Essas fotos são as que mais ensinam o modelo.
 - No automático, ele só salva as fotos em que achou o colete. As outras, marque com `m`.
