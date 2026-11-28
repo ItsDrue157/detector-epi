@@ -8,7 +8,7 @@ Detecta em tempo real, pela webcam (ou vídeo, foto, câmera IP), se cada pessoa
 detector_epi/
 ├── detectar_epi.py        # detecção em tempo real (webcam/vídeo/foto/câmera IP)
 ├── treinar.py             # treina/re-treina o modelo (na GPU NVIDIA)
-├── coleta.py              # coleta do colete padrão em etapas (gravar, extrair, rotular, revisar, montar)
+├── coleta.py              # coleta do colete padrão (gravar e revisar)
 ├── dados_treino.yaml      # dataset de treino: original + todas as coletas (gerado)
 ├── requirements.txt       # instalação só CPU
 ├── requirements-gpu.txt   # instalação com GPU NVIDIA (RTX série 40 ou 50)
@@ -19,7 +19,7 @@ detector_epi/
 │   └── yolo26s.pt         # detector de pessoa (GPU)
 ├── teste/                 # dataset original (Roboflow)
 ├── dados_bone/            # fotos de boné coletadas
-├── dados_colete/          # fotos de colete de EPI coletadas
+├── dados_colete/          # fotos revisadas do colete padrão
 └── tcc/                   # relatório e gráficos do re-treino
 ```
 
@@ -128,15 +128,12 @@ python treinar.py --dados dados_treino.yaml --modelo-base modelos/epi.pt --epoca
 
 ```bash
 python coleta.py gravar     # vídeos curtos por cenário -> coleta_colete/videos/
-python coleta.py extrair    # 2 fotos/s, sem borradas nem repetidas
-python coleta.py rotular    # o epi.pt sugere as caixas (CPU; --gpu numa RTX 40/50)
-python coleta.py revisar    # aceitar, redesenhar ou descartar cada foto
-python coleta.py montar     # dados_colete/ (só fotos aceitas) + dados_treino.yaml
+python coleta.py revisar    # o epi.pt sugere a caixa; você aceita, redesenha ou descarta
 ```
 
-Por que em etapas: o modelo atual acha o colete padrão (verde-limão com faixas refletivas) com só 0,03 a 0,10 de confiança, confunde as costas dele com `C_eletrica` e acha as metades do colete aberto separadas. Rotular ao vivo com ele levaria esses erros para o treino. Por isso o modelo só **sugere** as caixas, e nenhuma foto entra no dataset sem revisão.
+Por que revisar: o modelo atual acha o colete padrão (verde-limão com faixas refletivas) com só 0,03 a 0,10 de confiança, confunde as costas dele com `C_eletrica` e acha as metades do colete aberto separadas. Rotular ao vivo com ele levaria esses erros para o treino. Por isso o modelo só **sugere** a caixa, e nenhuma foto entra no dataset sem revisão.
 
-- **Split por vídeo:** cada vídeo vai inteiro para treino ou para validação (~20% dos vídeos de cada cenário, sorteio com semente fixa). Separar foto a foto colocaria fotos quase iguais dos dois lados e inflaria a métrica.
+- **Split por vídeo:** cada vídeo vai inteiro para treino ou para validação (o 2º, 6º, 10º... vídeo de cada cenário vai para a validação). Separar foto a foto colocaria fotos quase iguais dos dois lados e inflaria a métrica.
 - **Exemplos negativos:** o cenário `sem_colete` entra sem caixa de colete.
 - **No fim do treino**, o `treinar.py` mostra quantas fotos de boné ainda viram capacete, quantas fotos do colete padrão ficam sem colete e quantas `sem_colete` ganham um colete que não existe.
 
