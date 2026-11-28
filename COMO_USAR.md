@@ -103,15 +103,15 @@ python coletar_colete.py --fonte video.mp4  # ou um vídeo gravado
 
 As fotos vão para `dados_colete/`.
 
-- Coloque alguém **de colete de EPI** na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
+- Coloque alguém **com o colete padrão** (verde-limão com faixas refletivas) na frente da câmera, se mexendo: de frente, de lado, de costas, perto e longe.
 - Aperte `a` para salvar uma foto por segundo automaticamente (ou `espaço` para salvar uma por vez). `q` sai.
-- Em **verde grosso** aparece o colete que vai ser rotulado. Como ali só tem colete de verdade, ele aceita até detecções fracas.
-- Se aparecer uma **caixa amarela "talvez colete"** (o modelo achou, mas com pouca confiança), confira se ela cobre o colete: se sim, aperte `c` para aceitar e salvar; se não, use `m`.
+- Em **verde grosso** aparece o colete que vai ser rotulado. Como ali só tem o colete padrão, ele aceita até detecções bem fracas (a partir de 0.02).
+- Se a caixa verde estiver **errada ou folgada** (pegando braço, perna ou fundo), aperte `m` e desenhe a caixa justa no colete, do ombro até a barra.
 - Se aparecer **"colete não encontrado: aperte M"**, aperte `m`: a imagem congela. Arraste uma caixa sobre cada colete, aperte `ENTER` a cada caixa e `ESC` para salvar. Essas fotos são as que mais ensinam o modelo.
 - No automático, ele só salva as fotos em que achou o colete. As outras, marque com `m`.
 - Junte **de 150 a 300 fotos**, com coletes e pessoas diferentes, se der.
 
-> ⚠️ **Só colete de EPI de verdade.** Nada de colete de futebol nessa coleta.
+> ⚠️ **Só o colete padrão.** Deixe outros objetos verde-limão fora da imagem.
 
 **Passo 2: treinar, partindo do modelo atual**
 
